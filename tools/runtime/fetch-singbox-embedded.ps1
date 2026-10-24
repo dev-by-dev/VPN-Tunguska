@@ -11,8 +11,8 @@ param(
     [string]$Version = "2026.04.22-99e1ffe",
     [ValidateSet("LocalMaven", "GitHubPackages", "Both")]
     [string]$PublishTarget = "LocalMaven",
-    [string]$GitHubPackagesOwner = "Acionyx",
-    [string]$GitHubPackagesRepository = "tunguska",
+    [string]$GitHubPackagesOwner = "dev-by-dev",
+    [string]$GitHubPackagesRepository = "vpn-tunguska",
     [string]$GitHubPackagesUser,
     [string]$GitHubPackagesToken,
     [switch]$Force

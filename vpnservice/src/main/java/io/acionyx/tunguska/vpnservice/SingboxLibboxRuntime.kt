@@ -32,6 +32,7 @@ import io.nekohasekai.libbox.ExchangeContext
 import io.nekohasekai.libbox.InterfaceUpdateListener
 import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.libbox.LocalDNSTransport
+import io.nekohasekai.libbox.NeighborUpdateListener
 import io.nekohasekai.libbox.NetworkInterface as LibboxNetworkInterface
 import io.nekohasekai.libbox.NetworkInterfaceIterator
 import io.nekohasekai.libbox.Notification
@@ -287,6 +288,12 @@ private class LibboxSingboxRuntime(
             strategy = EmbeddedRuntimeStrategyId.SINGBOX_EMBEDDED,
             nativeEvent = "sing-box: $message",
         )
+    }
+
+    override fun triggerNativeCrash() {
+        // Debug hook from sing-box's CommandServerHandler contract. Tunguska never
+        // triggers intentional native crashes; kept as a safe no-op for parity.
+        Log.w(TAG, "triggerNativeCrash called — ignored")
     }
 
     private fun buildOverrideOptions(sessionPlan: TunnelSessionPlan): OverrideOptions = OverrideOptions().apply {
@@ -631,6 +638,20 @@ private class SingboxPlatformInterface(
             runCatching { connectivityManager.unregisterNetworkCallback(registeredCallback) }
         }
     }
+
+    override fun startNeighborMonitor(listener: NeighborUpdateListener) {
+        // sing-box's neighbor-table monitor has no unrooted Android implementation
+        // (upstream's SFA client wires it through RootClient). Tunguska's routing
+        // model never emits neighbor-matching rules, and the sing-box router treats
+        // a start failure as non-fatal (route/router.go logs and continues), so
+        // report unsupported instead of pretending to monitor.
+        throw Exception("neighbor monitor is not supported on Android")
+    }
+
+    override fun closeNeighborMonitor(listener: NeighborUpdateListener) = Unit
+
+    // Same as upstream SFA: interface-name registration is a no-op on Android.
+    override fun registerMyInterface(name: String) = Unit
 
     override fun getInterfaces(): NetworkInterfaceIterator {
         val networkInterfaces = runCatching {
