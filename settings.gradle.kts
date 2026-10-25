@@ -33,7 +33,7 @@ dependencyResolutionManagement {
         if (hasGitHubPackagesCredentials) {
             maven {
                 name = "tunguskaGitHubPackages"
-                url = uri("https://maven.pkg.github.com/${"Acionyx".lowercase(Locale.ROOT)}/tunguska")
+                url = uri("https://maven.pkg.github.com/${"dev-by-dev".lowercase(Locale.ROOT)}/vpn-tunguska")
                 credentials {
                     username = githubPackagesUser.get()
                     password = githubPackagesToken.get()
