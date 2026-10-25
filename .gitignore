@@ -1,0 +1,35 @@
+# macOS
+.DS_Store
+
+# Swift / Xcode
+.build/
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+
+# Generated Xcode project (run `xcodegen generate`)
+Tunguska.xcodeproj/
+
+# Native runtime artifacts
+Vendor/Libbox.xcframework/
+Vendor/*.xcframework.zip
+
+# Local signing and secrets
+Config/Signing.xcconfig
+*.p12
+*.mobileprovision
+*.provisionprofile
+*.cer
+*.key
+.env
+
+# Temporary upstream/reference checkouts
+.tmp/
+
+# Runtime data
+*.log
+*.sqlite
+*.sqlite-*
