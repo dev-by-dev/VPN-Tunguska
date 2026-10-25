@@ -447,8 +447,18 @@ function Test-RemoteMavenArtifactExists {
     try {
         $response = Invoke-WebRequest -Uri $PomUrl -Method Head -Headers $headers
         return $response.StatusCode -eq 200
-    } catch [System.Net.WebException] {
-        $statusCode = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { $null }
+    } catch {
+        # Windows PowerShell 5.1 wraps HTTP failures in WebException, while
+        # PowerShell 7 (the cross-platform shell used on macOS/Linux) throws
+        # HttpResponseException. Resolve the status code from either shape so a
+        # missing package (404) is treated as "not published yet" instead of
+        # aborting the publish flow.
+        $errorResponse = $_.Exception.Response
+        $statusCode = if ($null -ne $errorResponse) {
+            try { [int]$errorResponse.StatusCode } catch { $null }
+        } else {
+            $null
+        }
         if ($statusCode -eq 404) {
             return $false
         }
