@@ -31,9 +31,19 @@ for entitlement_file in "$WORK_DIR/Tunguska.entitlements" "$WORK_DIR/TunguskaTun
     plutil -remove com.apple.developer.networking.networkextension "$entitlement_file" >/dev/null 2>&1 || true
 done
 
+HELPER_PATH="${TUNGUSKA_HELPER_PATH:-$(dirname "$APP_PATH")/TunguskaHelper}"
+
 codesign --force --sign - "$APP_PATH/Contents/Frameworks/TunguskaCore.framework"
-codesign --force --sign - --entitlements "$WORK_DIR/TunguskaTunnel.entitlements" \
-    "$APP_PATH/Contents/PlugIns/TunguskaTunnel.appex"
+if [ -d "$APP_PATH/Contents/PlugIns/TunguskaTunnel.appex" ]; then
+    codesign --force --sign - --entitlements "$WORK_DIR/TunguskaTunnel.entitlements" \
+        "$APP_PATH/Contents/PlugIns/TunguskaTunnel.appex"
+fi
+if [ -f "$HELPER_PATH" ]; then
+    codesign --force --sign - "$HELPER_PATH"
+fi
 codesign --force --sign - --entitlements "$WORK_DIR/Tunguska.entitlements" "$APP_PATH"
 
 echo "Signed $APP_PATH with local ad-hoc entitlements."
+if [ -f "$HELPER_PATH" ]; then
+    echo "Signed $HELPER_PATH ad-hoc."
+fi

@@ -30,6 +30,7 @@ Config/Signing.xcconfig
 .tmp/
 
 # Runtime data
+Resources/Runtime/
 *.log
 *.sqlite
 *.sqlite-*

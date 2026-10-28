@@ -36,6 +36,11 @@ let package = Package(
             dependencies: ["TunguskaCore"],
             path: "Sources/Tunguska"
         ),
+        .executableTarget(
+            name: "TunguskaHelper",
+            dependencies: ["TunguskaCore"],
+            path: "Sources/TunguskaHelper"
+        ),
         .target(
             name: "TunguskaTunnel",
             dependencies: ["TunguskaCore"],

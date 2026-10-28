@@ -1,5 +1,4 @@
-@preconcurrency import Foundation
-@preconcurrency import NetworkExtension
+import Foundation
 import TunguskaCore
 
 enum TunnelObservedState: Equatable {
@@ -24,13 +23,13 @@ enum TunnelObservedState: Equatable {
     var detail: String {
         switch self {
         case .disconnected:
-            "No live NetworkExtension session is active."
+            "No privileged TUN session is active."
         case .connecting:
-            "NetworkExtension is establishing a session; the UI remains non-connected until it reports success."
+            "The sing-box service is starting; the UI remains non-connected until a TUN interface is observed."
         case .connected:
-            "A live NetworkExtension session reported the connected state."
+            "The privileged sing-box service reported a live TUN interface."
         case .disconnecting:
-            "NetworkExtension is stopping the active session."
+            "The privileged service is stopping the tunnel."
         case let .failed(message):
             message
         case let .unavailable(message):
@@ -41,38 +40,29 @@ enum TunnelObservedState: Equatable {
 
 enum TunnelControllerError: LocalizedError {
     case invalidProfile([ValidationIssue])
-    case missingProviderBundleIdentifier
+    case configurationFailed(String)
+    case startFailed(String)
+    case stopFailed(String)
 
     var errorDescription: String? {
         switch self {
         case let .invalidProfile(issues):
             let details = issues.map { "\($0.field): \($0.message)" }.joined(separator: "; ")
             return "The selected profile cannot be used by the tunnel: \(details)"
-        case .missingProviderBundleIdentifier:
-            return "The packet-tunnel provider identifier is not configured."
+        case let .configurationFailed(message),
+             let .startFailed(message),
+             let .stopFailed(message):
+            return message
         }
     }
 }
 
 @MainActor
 final class TunnelController: ObservableObject {
-    @Published private(set) var observedState: TunnelObservedState = .unavailable("VPN preferences have not been loaded yet.")
+    @Published private(set) var observedState: TunnelObservedState = .unavailable("The privileged tunnel service has not been checked yet.")
     @Published private(set) var isPreparing = false
 
-    let providerBundleIdentifier: String
-
-    private var manager: NETunnelProviderManager?
-    nonisolated(unsafe) private var statusObserver: NSObjectProtocol?
-
-    init(providerBundleIdentifier: String = "dev.tunguska.macos.TunguskaTunnel") {
-        self.providerBundleIdentifier = providerBundleIdentifier
-    }
-
-    deinit {
-        if let statusObserver {
-            NotificationCenter.default.removeObserver(statusObserver)
-        }
-    }
+    private let client = HelperClient()
 
     var statusImageName: String {
         switch observedState {
@@ -84,29 +74,19 @@ final class TunnelController: ObservableObject {
     }
 
     var canStart: Bool {
-        manager != nil && !isPreparing
+        !isPreparing
     }
 
     func refresh() {
         isPreparing = true
         Task {
             do {
-                let managers = try await loadManagers()
-                guard let manager = managers.first?.manager else {
-                    self.manager = nil
-                    observedState = .unavailable("No saved VPN configuration was found. Start will create one locally.")
-                    isPreparing = false
-                    return
-                }
-                self.manager = manager
-                observe(manager)
-                updateState(manager.connection.status)
-                isPreparing = false
+                let response = try await client.send(.status())
+                apply(response)
             } catch {
-                manager = nil
-                observedState = .failed(error.localizedDescription)
-                isPreparing = false
+                observedState = .unavailable(error.localizedDescription)
             }
+            isPreparing = false
         }
     }
 
@@ -115,132 +95,86 @@ final class TunnelController: ObservableObject {
         guard issues.isEmpty else {
             throw TunnelControllerError.invalidProfile(issues)
         }
-        guard !providerBundleIdentifier.isEmpty else {
-            throw TunnelControllerError.missingProviderBundleIdentifier
+
+        let generated: SingBoxGeneratedConfiguration
+        do {
+            generated = try SingBoxConfigurationBuilder.build(profile: profile)
+        } catch {
+            throw TunnelControllerError.configurationFailed(error.localizedDescription)
         }
 
         isPreparing = true
+        defer { isPreparing = false }
+
+        let response: HelperResponse
         do {
-            let manager = try await ensureManager(for: profile)
-            self.manager = manager
-            observe(manager)
-            try manager.connection.startVPNTunnel()
-            updateState(manager.connection.status)
-            isPreparing = false
+            response = try await client.send(
+                .start(
+                    profileID: profile.id,
+                    config: generated.json,
+                    expectedInterfaceAddress: HelperProtocol.defaultTunAddress
+                )
+            )
         } catch {
-            isPreparing = false
-            observedState = .failed(error.localizedDescription)
+            observedState = .unavailable(error.localizedDescription)
             throw error
+        }
+
+        apply(response)
+
+        guard response.ok else {
+            let message = response.message ?? "The privileged tunnel service could not start sing-box."
+            observedState = .failed(message)
+            throw TunnelControllerError.startFailed(message)
+        }
+
+        guard response.status?.state == .running, response.status?.interface != nil else {
+            let message = response.message ?? "sing-box did not report a live TUN interface."
+            observedState = .failed(message)
+            throw TunnelControllerError.startFailed(message)
         }
     }
 
     func disconnect() async throws {
-        guard let manager else {
-            observedState = .disconnected
+        isPreparing = true
+        defer { isPreparing = false }
+        observedState = .disconnecting
+
+        let response: HelperResponse
+        do {
+            response = try await client.send(.stop())
+        } catch {
+            observedState = .failed(error.localizedDescription)
+            throw error
+        }
+
+        guard response.ok else {
+            let message = response.message ?? "The privileged tunnel service could not stop sing-box."
+            observedState = .failed(message)
+            throw TunnelControllerError.stopFailed(message)
+        }
+        observedState = .disconnected
+    }
+
+    private func apply(_ response: HelperResponse) {
+        guard let status = response.status else {
+            observedState = response.ok ? .disconnected : .failed(response.message ?? "The helper response was incomplete.")
             return
         }
-        manager.connection.stopVPNTunnel()
-        updateState(manager.connection.status)
-    }
 
-    private func ensureManager(for profile: ProfileIr) async throws -> NETunnelProviderManager {
-        let managers = try await loadManagers()
-        let manager = managers.first?.manager ?? NETunnelProviderManager()
-        let protocolConfiguration = NETunnelProviderProtocol()
-        protocolConfiguration.providerBundleIdentifier = providerBundleIdentifier
-        protocolConfiguration.serverAddress = profile.endpointSummary
-        // The provider receives only the Keychain profile identifier and public endpoint summary.
-        // REALITY secrets stay in the Keychain-backed profile store and are resolved by the tunnel runtime.
-        protocolConfiguration.providerConfiguration = [
-            "profileID": profile.id,
-            "serverAddress": profile.endpointSummary,
-        ]
-        manager.protocolConfiguration = protocolConfiguration
-        manager.localizedDescription = "Tunguska VPN"
-        manager.isEnabled = true
-
-        try await saveManager(manager)
-        try await loadManager(manager)
-        return manager
-    }
-
-    private func loadManagers() async throws -> [TunnelManagerReference] {
-        try await withCheckedThrowingContinuation { continuation in
-            NETunnelProviderManager.loadAllFromPreferences { managers, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else {
-                    continuation.resume(returning: (managers ?? []).map(TunnelManagerReference.init))
-                }
-            }
-        }
-    }
-
-    private func saveManager(_ manager: NETunnelProviderManager) async throws {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            manager.saveToPreferences { error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else {
-                    continuation.resume(returning: ())
-                }
-            }
-        }
-    }
-
-    private func loadManager(_ manager: NETunnelProviderManager) async throws {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            manager.loadFromPreferences { error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else {
-                    continuation.resume(returning: ())
-                }
-            }
-        }
-    }
-
-    private func observe(_ manager: NETunnelProviderManager) {
-        if let statusObserver {
-            NotificationCenter.default.removeObserver(statusObserver)
-        }
-        statusObserver = NotificationCenter.default.addObserver(
-            forName: .NEVPNStatusDidChange,
-            object: manager.connection,
-            queue: .main
-        ) { [weak self] _ in
-            let status = manager.connection.status
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                updateState(status)
-            }
-        }
-    }
-
-    private func updateState(_ status: NEVPNStatus) {
-        switch status {
-        case .invalid:
-            observedState = .unavailable("The saved VPN configuration is not ready.")
-        case .disconnected:
+        switch status.state {
+        case .stopped:
             observedState = .disconnected
-        case .connecting:
+        case .starting:
             observedState = .connecting
-        case .connected:
-            observedState = .connected
-        case .reasserting:
-            observedState = .connecting
-        case .disconnecting:
-            observedState = .disconnecting
-        @unknown default:
-            observedState = .failed("NetworkExtension reported an unknown state.")
+        case .running:
+            if status.interface != nil {
+                observedState = .connected
+            } else {
+                observedState = .failed(status.message ?? "The helper reported a running engine without a TUN interface.")
+            }
+        case .failed:
+            observedState = .failed(status.message ?? "The tunnel service reported a failure.")
         }
-    }
-}
-
-private struct TunnelManagerReference: @unchecked Sendable {
-    let manager: NETunnelProviderManager
-
-    init(_ manager: NETunnelProviderManager) {
-        self.manager = manager
     }
 }

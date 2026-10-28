@@ -34,16 +34,35 @@ struct ProfilesView: View {
                 .font(.title2.weight(.semibold))
                 .padding([.top, .horizontal], 14)
 
-            List(selection: model.activeProfileBinding) {
+            List {
                 ForEach(model.profiles) { profile in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(profile.name)
-                            .font(.headline)
-                        Text(profile.endpointSummary)
-                            .font(.caption.monospaced())
-                            .foregroundStyle(.secondary)
+                    HStack(alignment: .center, spacing: 10) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(profile.name)
+                                .font(.headline)
+                            Text(profile.endpointSummary)
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Spacer()
+
+                        if profile.id == model.activeProfileID {
+                            Label("Active", systemImage: "checkmark.seal.fill")
+                                .labelStyle(.iconOnly)
+                                .foregroundStyle(.green)
+                        } else {
+                            Button("Select") {
+                                model.selectProfile(id: profile.id)
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
                     }
-                    .tag(profile.id)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        model.selectProfile(id: profile.id)
+                    }
                     .contextMenu {
                         Button("Delete", role: .destructive) {
                             model.deleteProfile(id: profile.id)

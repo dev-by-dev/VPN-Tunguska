@@ -95,7 +95,7 @@ struct SecurityView: View {
 
                 PanelCard(title: "Connection invariants", systemImage: "network.badge.shield.half.filled") {
                     VStack(alignment: .leading, spacing: 10) {
-                        Label("Only a live NetworkExtension session can produce the Connected state.", systemImage: "checkmark.circle")
+                        Label("Only a live TUN interface from the privileged helper can produce the Connected state.", systemImage: "checkmark.circle")
                         Label("Desired state is separate from observed runtime state.", systemImage: "checkmark.circle")
                         Label("Secrets are masked in the UI and are not written to logs.", systemImage: "checkmark.circle")
                         Label("Loopback destinations remain direct by routing policy.", systemImage: "checkmark.circle")
@@ -107,12 +107,12 @@ struct SecurityView: View {
                 PanelCard(title: "Runtime packaging", systemImage: "shippingbox") {
                     VStack(alignment: .leading, spacing: 10) {
                         LabeledContent("App target", value: "SwiftUI instrument panel")
-                        LabeledContent("Tunnel target", value: "NEPacketTunnelProvider + Libbox")
-                        LabeledContent("Engine", value: "Pinned sing-box libbox, arm64 static link")
-                        Text("The local ad-hoc build cannot start the NetworkExtension. A valid development team and the NetworkExtension entitlement are required for a live tunnel.")
+                        LabeledContent("Tunnel target", value: "Privileged helper + sing-box CLI")
+                        LabeledContent("Engine", value: "Pinned sing-box CLI, arm64")
+                        Text("The helper installs a LaunchDaemon under /Library/Tunguska and requires an administrator password once during setup.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        Text("A standalone Developer ID package may later switch packaging to a system extension without changing the tunnel implementation contract.")
+                        Text("This Clash-Verge-style path avoids the NetworkExtension entitlement. Gatekeeper may warn for unsigned local builds; do not run an unsigned privileged helper from untrusted sources.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }

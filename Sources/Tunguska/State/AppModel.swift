@@ -23,7 +23,6 @@ final class AppModel: ObservableObject {
         }
     }
 
-    @Published var section: Section = .home
     @Published private(set) var profiles: [ProfileIr] = []
     @Published private(set) var activeProfileID: String?
     @Published var importText: String = ""

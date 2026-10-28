@@ -11,32 +11,59 @@ SwiftUI app / MenuBarExtra
         ├── ProfileImportParser ── TunguskaCore
         ├── RoutePreviewEngine ─── TunguskaCore
         ├── ProfileKeychainStore ── SecItem generic-password items
-        └── TunnelController ────── NETunnelProviderManager / Session
+        └── TunnelController ────── HelperClient
                                       │
                                       ▼
-                           TunguskaTunnel extension
+                            Unix socket /var/run/tunguska-helper.sock
                                       │
-                    ProfileKeychainStore → SingBoxConfigurationBuilder
+        ┌─────────────────────────────┘
+        ▼
+TunguskaHelper LaunchDaemon
+        │
+        ├── validates HelperRequest / Tunguska-shaped sing-box config
+        ├── writes /Library/Tunguska/runtime/active-config.json (0600)
+        └── starts/stops /Library/Tunguska/sing-box
                                       │
-                           Libbox + PlatformInterface + TUN
+                                      ▼
+                             TUN + routes + DNS
                                       │
-                              sing-box / REALITY
+                               VLESS + REALITY
 ```
 
-`TunguskaCore` has no SwiftUI or NetworkExtension dependency. This keeps import, routing, and configuration semantics testable without a signed tunnel. `Sources/TunguskaTunnel` resolves the selected profile from the shared Keychain store, validates and builds the sing-box configuration, then starts the pinned libbox command server and TUN provider. Startup is fail-closed: any missing profile, invalid configuration, setup failure, or TUN failure is returned to NetworkExtension instead of producing a connected state.
+`TunguskaCore` has no SwiftUI, NetworkExtension, or root-helper dependency. This keeps import, routing, diagnostics, backup, configuration generation, and helper protocol semantics testable without a privileged process.
+
+`Sources/TunguskaHelper` is deliberately narrow. It accepts only `status`, `start`, and `stop`; `start` accepts only a Tunguska-shaped sing-box JSON document containing a TUN inbound plus VLESS/direct/block outbounds and a route section. It does not expose arbitrary shell execution, general process spawning, file editing, or a management API.
+
+The retained `Sources/TunguskaTunnel` NetworkExtension target remains as a Team-signed alternative. The helper path does not embed or require it.
 
 ## State ownership
 
 - `AppModel` owns presentation state on the main actor.
-- `TunnelController` owns VPN preferences and session transitions.
-- The packet-tunnel provider owns the live engine and reports health/errors.
+- `TunnelController` owns desired start/stop intent and maps helper-observed state into UI state.
+- `TunguskaHelper` owns the root `sing-box` process, runtime config path, log files, and observed TUN interface.
 - Desired user state and observed runtime state are separate values.
+- UI shows `Connected` only when the helper reports a running `sing-box` process and a non-nil TUN interface.
 
 ## Import and persistence
 
-Import is staged: input → validation → normalized preview → explicit confirmation → Keychain replacement. Import never starts VPN automatically. The UI masks stored UUID/REALITY material and keeps desired tunnel state separate from the NetworkExtension-observed session state.
+Import is staged: input → validation → normalized preview → explicit confirmation → Keychain replacement. Import never starts VPN automatically. The UI masks stored UUID/REALITY material.
 
-The app and packet-tunnel extension use the same `ProfileKeychainStore` service and a shared Keychain access group. The provider receives only the profile identifier and public endpoint in `providerConfiguration`; it loads the sealed profile itself. A Team-signed build uses the data-protection Keychain with the entitled access group. An unsigned or ad-hoc local build falls back to the legacy Keychain without an access group, which is sufficient for local UI/Keychain testing but cannot start the NetworkExtension.
+The app resolves the selected profile from `ProfileKeychainStore`, builds the sing-box configuration with `SingBoxConfigurationBuilder`, and sends that sealed runtime document to the helper. The helper receives the runtime config over the local authenticated socket and writes it under `/Library/Tunguska/runtime` with root-only permissions. The app-side provider configuration no longer copies secrets into NetworkExtension preferences because the helper path does not use NetworkExtension.
+
+A Team-signed build may use a data-protection Keychain and an entitled access group. An unsigned or ad-hoc local build falls back to the legacy Keychain without an access group for local UI testing. This is independent from tunnel startup on the helper path.
+
+## Helper security model
+
+- The helper runs as root from `/Library/Tunguska/TunguskaHelper`.
+- It listens on `/var/run/tunguska-helper.sock`.
+- The socket accepts local connections only after `getpeereid` succeeds and the peer is root or the current console user.
+- Requests and responses are small JSON messages; the client closes its write side so the helper can read the complete request.
+- The helper never logs the runtime config or profile secrets.
+- The helper writes a single active runtime config and removes it on stop/replace.
+- Stop sends SIGTERM, waits, escalates to SIGKILL if needed, then removes runtime state.
+- The helper observes readiness by looking for the expected TUN address (`172.19.0.1`) in `/sbin/ifconfig`; no UI state may be inferred from a process handle alone.
+
+This is enough for local GitHub-style distribution with explicit admin install, but public binaries should be signed/notarized or distributed as source.
 
 ## Backup and diagnostics
 
@@ -46,12 +73,12 @@ Redacted diagnostics are assembled from structured counters rather than by editi
 
 ## Runtime distribution
 
-The app-side `TunnelController` stores only the Keychain profile identifier and public endpoint summary in the NetworkExtension provider configuration; secrets remain in the shared Keychain profile store. The initial local build targets a packet-tunnel app extension. A standalone Developer ID build may require a system-extension packaging variant; this is a distribution decision, not a reason to maintain two runtime implementations.
+`project.yml` defines the Xcode app, core framework, privileged helper tool, retained packet-tunnel extension, and unit-test target. The helper path builds the app and helper arm64-only. `Resources/Runtime/sing-box` is a pinned sing-box CLI build and is local runtime output; it must not be committed.
 
-`project.yml` defines the Xcode app, core framework, packet-tunnel extension, and unit-test target for full Xcode builds. `Vendor/Libbox.xcframework` is a static arm64/x86_64 archive; the app and extension themselves are arm64-only. `./scripts/build-libbox-macos.sh` builds the pinned sing-box revision, and `./scripts/generate-xcode-project.sh` regenerates the local project. The generated `Tunguska.xcodeproj`, libbox framework, and local signing files are not committed.
+`./scripts/build-singbox-cli.sh` builds the pinned sing-box CLI. `./scripts/generate-xcode-project.sh` regenerates the local Xcode project. `./scripts/install-helper.sh` copies `TunguskaHelper`, the `TunguskaCore.framework` it links against, and `sing-box` into `/Library/Tunguska`, writes the LaunchDaemon plist, and loads the service. `./scripts/uninstall-helper.sh` removes them.
 
-The app bundle carries the generated `Resources/Assets.xcassets` icon and accent color. `./scripts/sign-local-adhoc.sh` strips restricted entitlements that AMFI rejects on ad-hoc signatures and signs the core, extension, and app for local UI/Keychain smoke tests. It cannot enable NetworkExtension or a shared Keychain group; those require a development team and provisioning.
+The app bundle carries the generated `Resources/Assets.xcassets` icon and accent color. `./scripts/sign-local-adhoc.sh` signs local app/helper artifacts and strips restricted entitlements that AMFI rejects on ad-hoc signatures. The helper path does not need the NetworkExtension entitlement; Gatekeeper warnings remain possible for unsigned local builds.
 
 ## Third-party code
 
-sing-box and sing-box-for-apple are GPL-licensed upstream projects. The initial implementation uses the libbox API and studies upstream integration behavior. Copying upstream Swift/Go source requires preserving its license and copyright. Choose the project's distribution license before publishing source or binaries.
+sing-box and sing-box-for-apple are GPL-licensed upstream projects. The helper path uses a standalone sing-box CLI built from the pinned source. Copying upstream Swift/Go source requires preserving its license and copyright. Choose the project's distribution license before publishing source or binaries.

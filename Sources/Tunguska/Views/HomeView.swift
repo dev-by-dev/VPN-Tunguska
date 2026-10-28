@@ -63,14 +63,23 @@ struct HomeView: View {
                 Spacer()
 
                 VStack(alignment: .trailing, spacing: 10) {
-                    Picker("Profile", selection: model.activeProfileBinding) {
-                        Text("No profile").tag("")
+                    Menu {
                         ForEach(model.profiles) { profile in
-                            Text(profile.name).tag(profile.id)
+                            Button {
+                                model.selectProfile(id: profile.id)
+                            } label: {
+                                Label(
+                                    profile.name,
+                                    systemImage: profile.id == model.activeProfileID ? "checkmark" : ""
+                                )
+                            }
                         }
+                    } label: {
+                        Text(model.activeProfile?.name ?? "No profile")
+                            .frame(width: 200, alignment: .trailing)
                     }
-                    .pickerStyle(.menu)
-                    .frame(width: 240)
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
 
                     Button {
                         Task {
@@ -134,10 +143,10 @@ struct HomeView: View {
     private var runtimeIntegrityPanel: some View {
         PanelCard(title: "Runtime integrity", systemImage: "checkmark.shield") {
             VStack(alignment: .leading, spacing: 8) {
-                Label("Connected UI state requires a live NetworkExtension session.", systemImage: "network.badge.shield.half.filled")
-                Label("Loopback traffic remains local by policy.", systemImage: "arrow.loopback")
+                Label("Connected UI state requires a live TUN interface from the privileged service.", systemImage: "network.badge.shield.half.filled")
+                Label("Loopback traffic remains local by policy.", systemImage: "arrow.clockwise")
                 Label("Profile secrets are read from Keychain storage, not UserDefaults or logs.", systemImage: "key.fill")
-                Label("The arm64 tunnel target links the pinned libbox runtime; starting it requires a Team-signed NetworkExtension host.", systemImage: "shippingbox")
+                Label("The Clash-Verge-style arm64 helper starts a pinned sing-box CLI and owns routes/DNS.", systemImage: "shippingbox")
             }
             .font(.callout)
             .foregroundStyle(.secondary)

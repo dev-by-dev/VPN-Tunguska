@@ -2,6 +2,10 @@ import SwiftUI
 
 struct RootView: View {
     @EnvironmentObject private var model: AppModel
+    @State private var selectedSection: AppModel.Section = {
+        // Automated smoke-test hook: open -n Tunguska.app --args -open-section-profiles
+        ProcessInfo.processInfo.arguments.contains("-open-section-profiles") ? .profiles : .home
+    }()
     @State private var columnVisibility = NavigationSplitViewVisibility.all
 
     var body: some View {
@@ -17,7 +21,7 @@ struct RootView: View {
     }
 
     private var sidebar: some View {
-        List(AppModel.Section.allCases, selection: $model.section) { section in
+        List(AppModel.Section.allCases, selection: $selectedSection) { section in
             Label(section.rawValue, systemImage: section.iconName)
                 .tag(section)
         }
@@ -26,7 +30,7 @@ struct RootView: View {
 
     @ViewBuilder
     private var detailView: some View {
-        switch model.section {
+        switch selectedSection {
         case .home:
             HomeView()
         case .profiles:
@@ -79,7 +83,6 @@ struct MenuBarContentView: View {
             .disabled(model.activeProfile == nil || model.tunnelController.isPreparing)
 
             Button("Open Tunguska") {
-                model.section = .home
                 NSApp.activate(ignoringOtherApps: true)
             }
 

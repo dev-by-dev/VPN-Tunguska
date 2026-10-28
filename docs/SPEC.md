@@ -39,13 +39,13 @@ Precedence:
 
 Russia direct covers `ru`, `su`, `xn--p1ai`, and runtime GeoIP `ru`. Custom direct domains are suffix rules. Loopback always remains local. Route test is offline and must disclose when runtime GeoIP classification could change its result.
 
-Per-application routing is a platform capability, not an assumed feature. It must only be exposed in the UI when the selected NetworkExtension configuration actually enforces it.
+Per-application routing is a platform capability, not an assumed feature. It must only be exposed in the UI when the selected runtime actually enforces it. The initial helper/TUN path does not claim per-application routing.
 
 ## Runtime
 
-- Production transport uses `NEPacketTunnelProvider` and embedded sing-box/libbox.
-- The app and extension share only the minimum required configuration through a protected container/provider message.
-- Runtime state comes from `NETunnelProviderSession` and provider health, never from a button's desired state.
+- Production transport uses the Clash-Verge-style privileged helper: a root `TunguskaHelper` LaunchDaemon starts a pinned standalone `sing-box` CLI.
+- The app and helper share only validated helper commands and the generated sing-box document; the helper does not expose arbitrary root commands.
+- Runtime state comes from helper status and a live TUN interface observation, never from a button's desired state.
 - No sing-box Clash API, debug endpoint, or unauthenticated local proxy.
 - Runtime configuration is generated from the same validated profile used by the preview.
 - XRAY remains behind the engine protocol as a later strategy; it is not advertised as available before it works.
@@ -64,7 +64,7 @@ Per-application routing is a platform capability, not an assumed feature. It mus
 3. Route preview preserves BLOCK/regional/explicit/default precedence.
 4. Keychain save/read/replace does not write profile secrets to preferences or logs.
 5. The app builds and displays all four primary sections on Apple Silicon.
-6. A real sing-box NetworkExtension session starts and stops, with live IP verification.
+6. A real sing-box helper/TUN session starts and stops, with live IP/interface verification.
 7. A runtime failure returns to a non-connected state and tears down the tunnel.
 8. Russia direct and custom direct rules are present in the generated runtime configuration.
 

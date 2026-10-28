@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Security
 
 public enum ProfileKeychainStoreError: LocalizedError {
@@ -30,27 +31,54 @@ public struct ProfileKeychainStore: Sendable {
     private let accessGroup: String?
     private let activeProfileAccount = "__meta__.active-profile"
 
+    private static let log = Logger(subsystem: "dev.tunguska.macos", category: "keychain")
+
     public init(
         service: String = ProfileKeychainStore.defaultService,
         accessGroup: String? = nil
     ) {
         self.service = service
-        self.accessGroup = accessGroup ?? Self.configuredAccessGroup()
+        let resolvedGroup = accessGroup ?? Self.configuredAccessGroup()
+        self.accessGroup = resolvedGroup
+        let mode = resolvedGroup == nil ? "file-keychain" : "data-protection"
+        Self.log.info("init service=\(service, privacy: .public) accessGroup=\(resolvedGroup ?? "nil", privacy: .public) mode=\(mode, privacy: .public)")
     }
 
     public func loadAll() throws -> [ProfileIr] {
+        // The legacy file keychain rejects kSecMatchLimitAll combined with kSecReturnData
+        // (errSecParam) on current macOS, so in that mode bulk-fetch attributes only and
+        // pull each item's data with an individual query.
         var query = baseQuery()
         query[kSecMatchLimit as String] = kSecMatchLimitAll
         query[kSecReturnAttributes as String] = true
-        query[kSecReturnData as String] = true
+        if accessGroup != nil {
+            query[kSecReturnData as String] = true
+        }
 
         var result: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
+        Self.log.info("loadAll copyMatching status=\(status)")
         if status == errSecItemNotFound { return [] }
         guard status == errSecSuccess else {
             throw ProfileKeychainStoreError.unexpectedStatus(status)
         }
-        guard let items = result as? [[String: Any]] else { return [] }
+        guard let attributeItems = result as? [[String: Any]] else { return [] }
+        Self.log.info("loadAll attribute items=\(attributeItems.count)")
+
+        var items = attributeItems
+        if accessGroup == nil {
+            items = attributeItems.compactMap { item -> [String: Any]? in
+                guard let account = item[kSecAttrAccount as String] as? String else { return nil }
+                var dataQuery = itemQuery(account: account)
+                dataQuery[kSecReturnData as String] = true
+                var dataResult: CFTypeRef?
+                let dataStatus = SecItemCopyMatching(dataQuery as CFDictionary, &dataResult)
+                guard dataStatus == errSecSuccess, let data = dataResult as? Data else { return nil }
+                var merged = item
+                merged[kSecValueData as String] = data
+                return merged
+            }
+        }
 
         let decoder = JSONDecoder()
         var profiles: [ProfileIr] = []
@@ -97,12 +125,14 @@ public struct ProfileKeychainStore: Sendable {
 
         var query = itemQuery(account: profile.id)
         let existingStatus = SecItemCopyMatching(query as CFDictionary, nil)
+        Self.log.info("save account=<hash> copyMatching status=\(existingStatus)")
         if existingStatus == errSecSuccess {
             let attributes: [String: Any] = [
                 kSecValueData as String: data,
                 kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
             ]
             let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+            Self.log.info("save update status=\(status)")
             guard status == errSecSuccess else {
                 throw ProfileKeychainStoreError.unexpectedStatus(status)
             }
@@ -115,6 +145,7 @@ public struct ProfileKeychainStore: Sendable {
         query[kSecValueData as String] = data
         query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         let status = SecItemAdd(query as CFDictionary, nil)
+        Self.log.info("save add dataBytes=\(data.count) status=\(status)")
         guard status == errSecSuccess else {
             throw ProfileKeychainStoreError.unexpectedStatus(status)
         }
@@ -146,6 +177,7 @@ public struct ProfileKeychainStore: Sendable {
     public func setActiveProfileID(_ id: String?) throws {
         guard let id else {
             let status = SecItemDelete(itemQuery(account: activeProfileAccount) as CFDictionary)
+            Self.log.info("setActive(nil) delete status=\(status)")
             guard status == errSecSuccess || status == errSecItemNotFound else {
                 throw ProfileKeychainStoreError.unexpectedStatus(status)
             }
@@ -159,12 +191,14 @@ public struct ProfileKeychainStore: Sendable {
         var query = itemQuery(account: activeProfileAccount)
         let data = Data(id.utf8)
         let existingStatus = SecItemCopyMatching(query as CFDictionary, nil)
+        Self.log.info("setActive copyMatching status=\(existingStatus)")
         if existingStatus == errSecSuccess {
             let attributes: [String: Any] = [
                 kSecValueData as String: data,
                 kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
             ]
             let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+            Self.log.info("setActive update status=\(status)")
             guard status == errSecSuccess else {
                 throw ProfileKeychainStoreError.unexpectedStatus(status)
             }
@@ -177,6 +211,7 @@ public struct ProfileKeychainStore: Sendable {
         query[kSecValueData as String] = data
         query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         let status = SecItemAdd(query as CFDictionary, nil)
+        Self.log.info("setActive add status=\(status)")
         guard status == errSecSuccess else {
             throw ProfileKeychainStoreError.unexpectedStatus(status)
         }
