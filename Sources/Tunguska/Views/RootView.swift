@@ -71,7 +71,7 @@ struct MenuBarContentView: View {
 
             Divider()
 
-            Button(model.tunnelController.observedState == .connected ? "Disconnect" : "Connect") {
+            Button {
                 Task {
                     if model.tunnelController.observedState == .connected {
                         await model.disconnectTunnel()
@@ -79,12 +79,23 @@ struct MenuBarContentView: View {
                         await model.connectActiveProfile()
                     }
                 }
+            } label: {
+                Label(
+                    model.tunnelController.observedState == .connected ? "Disconnect" : "Connect",
+                    systemImage: model.tunnelController.observedState == .connected ? "stop.fill" : "play.fill"
+                )
+                .foregroundStyle(.primary)
             }
+            .buttonStyle(MenuRowButtonStyle())
             .disabled(model.activeProfile == nil || model.tunnelController.isPreparing)
 
-            Button("Open Tunguska") {
+            Button {
                 NSApp.activate(ignoringOtherApps: true)
+            } label: {
+                Label("Open Tunguska", systemImage: "macwindow")
+                    .foregroundStyle(.primary)
             }
+            .buttonStyle(MenuRowButtonStyle())
 
             if let tunnelError = model.tunnelError {
                 Text(tunnelError)
@@ -94,10 +105,13 @@ struct MenuBarContentView: View {
 
             Divider()
 
-            Button("Quit Tunguska", role: .destructive) {
+            Button {
                 model.quitFromMenuBar()
+            } label: {
+                Label("Quit Tunguska", systemImage: "power")
+                    .foregroundStyle(.primary)
             }
-            .keyboardShortcut("q", modifiers: .command)
+            .buttonStyle(MenuRowButtonStyle())
         }
         .padding(12)
         .frame(width: 280)

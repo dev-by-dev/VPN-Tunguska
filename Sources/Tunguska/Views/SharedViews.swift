@@ -106,3 +106,33 @@ func maskedSecret(_ value: String, visiblePrefix: Int = 6, visibleSuffix: Int = 
     }
     return "\(value.prefix(visiblePrefix))…\(value.suffix(visibleSuffix))"
 }
+
+/// Quiet, full-width menu-row buttons for the menu bar panel: flat by
+/// default, with a subtle rounded highlight on hover and a slightly
+/// stronger one while pressed.
+struct MenuRowButtonStyle: ButtonStyle {
+    @State private var isHovering = false
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.callout)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.primary.opacity(highlightOpacity(isPressed: configuration.isPressed)))
+            )
+            .opacity(isEnabled ? 1 : 0.4)
+            .animation(.easeInOut(duration: 0.12), value: isHovering)
+            .onHover { isHovering = $0 }
+    }
+
+    private func highlightOpacity(isPressed: Bool) -> Double {
+        guard isEnabled else { return 0 }
+        if isPressed { return 0.14 }
+        return isHovering ? 0.08 : 0
+    }
+}
