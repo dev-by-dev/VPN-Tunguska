@@ -35,9 +35,13 @@ final class AppModel: ObservableObject {
     let tunnelController = TunnelController()
 
     private let store: ProfileKeychainStore
+    private var cancellables: Set<AnyCancellable> = []
 
     init(store: ProfileKeychainStore = .shared) {
         self.store = store
+        tunnelController.objectWillChange
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
         reloadProfiles()
         tunnelController.refresh()
     }

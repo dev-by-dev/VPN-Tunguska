@@ -1,4 +1,5 @@
 import Foundation
+import os
 import TunguskaCore
 
 enum TunnelObservedState: Equatable {
@@ -59,8 +60,13 @@ enum TunnelControllerError: LocalizedError {
 
 @MainActor
 final class TunnelController: ObservableObject {
+    private static let logger = Logger(subsystem: "dev.tunguska.macos", category: "tunnel")
+
     @Published private(set) var observedState: TunnelObservedState = .unavailable("The privileged tunnel service has not been checked yet.")
     @Published private(set) var isPreparing = false
+    @Published private(set) var connectedInterface: String?
+
+    let traffic = TrafficMonitor()
 
     private let client = HelperClient()
 
@@ -91,8 +97,10 @@ final class TunnelController: ObservableObject {
     }
 
     func connect(profile: ProfileIr) async throws {
+        Self.logger.log("connect requested for profile \(profile.name, privacy: .public)")
         let issues = profile.validationIssues()
         guard issues.isEmpty else {
+            Self.logger.error("profile validation failed: \(issues.map(\.field), privacy: .public)")
             throw TunnelControllerError.invalidProfile(issues)
         }
 
@@ -100,6 +108,7 @@ final class TunnelController: ObservableObject {
         do {
             generated = try SingBoxConfigurationBuilder.build(profile: profile)
         } catch {
+            Self.logger.error("configuration build failed: \(error.localizedDescription, privacy: .public)")
             throw TunnelControllerError.configurationFailed(error.localizedDescription)
         }
 
@@ -116,10 +125,14 @@ final class TunnelController: ObservableObject {
                 )
             )
         } catch {
+            Self.logger.error("helper start request failed: \(error.localizedDescription, privacy: .public)")
             observedState = .unavailable(error.localizedDescription)
             throw error
         }
 
+        Self.logger.log(
+            "helper start responded ok=\(response.ok, privacy: .public) state=\(response.status?.state.rawValue ?? "nil", privacy: .public) interface=\(response.status?.interface ?? "nil", privacy: .public)"
+        )
         apply(response)
 
         guard response.ok else {
@@ -136,6 +149,7 @@ final class TunnelController: ObservableObject {
     }
 
     func disconnect() async throws {
+        Self.logger.log("disconnect requested")
         isPreparing = true
         defer { isPreparing = false }
         observedState = .disconnecting
@@ -144,36 +158,47 @@ final class TunnelController: ObservableObject {
         do {
             response = try await client.send(.stop())
         } catch {
+            Self.logger.error("helper stop request failed: \(error.localizedDescription, privacy: .public)")
             observedState = .failed(error.localizedDescription)
             throw error
         }
 
         guard response.ok else {
             let message = response.message ?? "The privileged tunnel service could not stop sing-box."
+            Self.logger.error("helper stop rejected: \(message, privacy: .public)")
             observedState = .failed(message)
             throw TunnelControllerError.stopFailed(message)
         }
+        traffic.stop()
         observedState = .disconnected
     }
 
     private func apply(_ response: HelperResponse) {
         guard let status = response.status else {
+            connectedInterface = nil
+            traffic.stop()
             observedState = response.ok ? .disconnected : .failed(response.message ?? "The helper response was incomplete.")
             return
         }
 
         switch status.state {
         case .stopped:
+            connectedInterface = nil
+            traffic.stop()
             observedState = .disconnected
         case .starting:
             observedState = .connecting
         case .running:
-            if status.interface != nil {
+            if let interface = status.interface {
+                connectedInterface = interface
+                traffic.start(interface: interface)
                 observedState = .connected
             } else {
                 observedState = .failed(status.message ?? "The helper reported a running engine without a TUN interface.")
             }
         case .failed:
+            connectedInterface = nil
+            traffic.stop()
             observedState = .failed(status.message ?? "The tunnel service reported a failure.")
         }
     }

@@ -1,3 +1,4 @@
+import Charts
 import SwiftUI
 import TunguskaCore
 
@@ -9,6 +10,7 @@ struct HomeView: View {
             VStack(alignment: .leading, spacing: 20) {
                 header
                 connectionPanel
+                trafficPanel
                 configurationPanels
                 runtimeIntegrityPanel
             }
@@ -103,6 +105,15 @@ struct HomeView: View {
         }
     }
 
+    private var trafficPanel: some View {
+        PanelCard(title: "Traffic", systemImage: "chart.xyaxis.line") {
+            TrafficPanelContent(
+                traffic: model.tunnelController.traffic,
+                isConnected: model.tunnelController.observedState == .connected
+            )
+        }
+    }
+
     private var configurationPanels: some View {
         HStack(alignment: .top, spacing: 16) {
             PanelCard(title: "Tunnel scope", systemImage: "network") {
@@ -179,6 +190,80 @@ struct HomeView: View {
         case let .vpnDns(servers): "VPN DNS (\(servers.count))"
         case .systemDns: "System DNS"
         case let .customEncrypted(kind, endpoints): "Encrypted DNS \(kind.rawValue) (\(endpoints.count))"
+        }
+    }
+}
+
+private struct TrafficPanelContent: View {
+    @ObservedObject var traffic: TrafficMonitor
+    let isConnected: Bool
+
+    var body: some View {
+        if isConnected && traffic.isActive {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 24) {
+                    trafficStat(
+                        title: "Down",
+                        color: .blue,
+                        rate: TrafficFormat.rate(traffic.currentDownBytesPerSecond),
+                        total: TrafficFormat.total(traffic.totalDownBytes)
+                    )
+                    trafficStat(
+                        title: "Up",
+                        color: .green,
+                        rate: TrafficFormat.rate(traffic.currentUpBytesPerSecond),
+                        total: TrafficFormat.total(traffic.totalUpBytes)
+                    )
+                    Spacer()
+                    if let startedAt = traffic.sessionStartedAt {
+                        Text("Session \(startedAt, style: .relative)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Chart(traffic.samples) { sample in
+                    AreaMark(
+                        x: .value("Time", sample.date),
+                        y: .value("Down", Int64(sample.downBytesPerSecond.rounded()))
+                    )
+                    .foregroundStyle(Color.blue.opacity(0.30))
+                    .interpolationMethod(.catmullRom)
+
+                    AreaMark(
+                        x: .value("Time", sample.date),
+                        y: .value("Up", Int64(sample.upBytesPerSecond.rounded()))
+                    )
+                    .foregroundStyle(Color.green.opacity(0.30))
+                    .interpolationMethod(.catmullRom)
+                }
+                .chartXAxis(.hidden)
+                .chartYAxis {
+                    AxisMarks { AxisValueLabel(format: .byteCount(style: .file)) }
+                }
+                .frame(height: 130)
+            }
+        } else {
+            Text("Connect the VPN to see live speed, session traffic, and volume totals.")
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func trafficStat(title: String, color: Color, rate: String, total: String) -> some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(color)
+                .frame(width: 9, height: 9)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(rate)
+                    .font(.title3.monospacedDigit().weight(.semibold))
+                Text("\(total) total")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 }

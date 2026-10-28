@@ -22,10 +22,27 @@ enum HelperClientError: LocalizedError {
 }
 
 struct HelperClient {
+    private static let responseTimeout: Duration = .seconds(20)
+
     func send(_ request: HelperRequest) async throws -> HelperResponse {
-        try await Task.detached(priority: .userInitiated) {
-            try Self.sendSynchronously(request)
-        }.value
+        try await withThrowingTaskGroup(of: HelperResponse.self) { group in
+            group.addTask {
+                try await Task.detached(priority: .userInitiated) {
+                    try Self.sendSynchronously(request)
+                }.value
+            }
+            group.addTask {
+                try await Task.sleep(for: Self.responseTimeout)
+                throw HelperClientError.requestFailed(
+                    "The Tunguska helper did not respond within \(Self.responseTimeout.components.seconds) seconds."
+                )
+            }
+            guard let response = try await group.next() else {
+                throw HelperClientError.requestFailed("The helper request produced no result.")
+            }
+            group.cancelAll()
+            return response
+        }
     }
 
     private static func sendSynchronously(_ request: HelperRequest) throws -> HelperResponse {
