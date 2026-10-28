@@ -115,6 +115,65 @@ final class TrafficMonitor: ObservableObject {
         }
     }
 
+    /// Returns `hint` when it names a real system interface; otherwise finds the
+    /// interface that currently owns `address` (the expected TUN address). Keeps
+    /// traffic stats working when the helper reports a bogus interface name
+    /// (e.g. the pre-parser-fix helper returning "Configuration").
+    static func resolveInterface(hint: String?, address: String) async -> String? {
+        let known = await knownInterfaces()
+        if let hint, !hint.isEmpty, known.contains(hint) {
+            return hint
+        }
+        guard let output = await runCommand("/sbin/ifconfig", ["-a"]) else { return hint }
+        return interfaceOwning(address: address, in: output) ?? hint
+    }
+
+    /// Names of all system interfaces, one per line via `ifconfig -l`.
+    private static func knownInterfaces() async -> Set<String> {
+        guard let output = await runCommand("/sbin/ifconfig", ["-l"]) else { return [] }
+        return Set(output.split(whereSeparator: { $0 == " " || $0 == "\n" }).map(String.init))
+    }
+
+    /// Parses `ifconfig -a` output: column-zero lines open an interface block
+    /// (`utun4: flags=...`), indented lines belong to it. Returns the interface
+    /// whose block contains `inet <address> `.
+    static func interfaceOwning(address: String, in output: String) -> String? {
+        var current: String?
+        for line in output.split(separator: "\n", omittingEmptySubsequences: false) {
+            if line.hasPrefix("\t") || line.hasPrefix(" ") {
+                if let current, line.contains("inet \(address) ") {
+                    return current
+                }
+            } else {
+                let name = line.prefix {
+                    $0.isLetter || $0.isNumber || $0 == "." || $0 == "_" || $0 == "-"
+                }
+                current = name.isEmpty ? nil : String(name)
+            }
+        }
+        return nil
+    }
+
+    private static func runCommand(_ path: String, _ arguments: [String]) async -> String? {
+        await Task.detached(priority: .utility) {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: path)
+            process.arguments = arguments
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            process.standardError = FileHandle.nullDevice
+            do {
+                try process.run()
+            } catch {
+                return nil
+            }
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            guard process.terminationStatus == 0 else { return nil }
+            return String(data: data, encoding: .utf8)
+        }.value
+    }
+
     /// Reads link-level interface counters via netstat. Link rows look like:
     /// `utun4 9000 <Link#21> Ipkts Ierrs Ibytes Opkts Oerrs Obytes Coll`
     private static func readCounters(interface: String) async -> (down: UInt64, up: UInt64, date: Date)? {

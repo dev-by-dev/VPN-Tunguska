@@ -88,7 +88,7 @@ final class TunnelController: ObservableObject {
         Task {
             do {
                 let response = try await client.send(.status())
-                apply(response)
+                await apply(response)
             } catch {
                 observedState = .unavailable(error.localizedDescription)
             }
@@ -133,7 +133,7 @@ final class TunnelController: ObservableObject {
         Self.logger.log(
             "helper start responded ok=\(response.ok, privacy: .public) state=\(response.status?.state.rawValue ?? "nil", privacy: .public) interface=\(response.status?.interface ?? "nil", privacy: .public)"
         )
-        apply(response)
+        await apply(response)
 
         guard response.ok else {
             let message = response.message ?? "The privileged tunnel service could not start sing-box."
@@ -173,7 +173,7 @@ final class TunnelController: ObservableObject {
         observedState = .disconnected
     }
 
-    private func apply(_ response: HelperResponse) {
+    private func apply(_ response: HelperResponse) async {
         guard let status = response.status else {
             connectedInterface = nil
             traffic.stop()
@@ -189,7 +189,16 @@ final class TunnelController: ObservableObject {
         case .starting:
             observedState = .connecting
         case .running:
-            if let interface = status.interface {
+            if let reported = status.interface {
+                let interface = await TrafficMonitor.resolveInterface(
+                    hint: reported,
+                    address: HelperProtocol.defaultTunAddress
+                ) ?? reported
+                if interface != reported {
+                    Self.logger.log(
+                        "resolved tunnel interface \(interface, privacy: .public) (helper reported '\(reported, privacy: .public)')"
+                    )
+                }
                 connectedInterface = interface
                 traffic.start(interface: interface)
                 observedState = .connected
