@@ -57,6 +57,18 @@ final class AppModel: ObservableObject {
         )
     }
 
+    /// Quits the app from the menu bar. Tears down an active tunnel first so
+    /// the root-side sing-box process does not keep running unsupervised.
+    func quitFromMenuBar() {
+        let shouldDisconnect = tunnelController.observedState == .connected || tunnelController.isPreparing
+        Task { @MainActor in
+            if shouldDisconnect {
+                await disconnectTunnel()
+            }
+            NSApp.terminate(nil)
+        }
+    }
+
     func selectProfile(id: String) {
         guard !id.isEmpty else { return }
         guard profiles.contains(where: { $0.id == id }) else { return }

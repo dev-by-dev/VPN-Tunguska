@@ -12,10 +12,10 @@ enum TrafficFormat {
     static func rate(_ bytesPerSecond: Double) -> String {
         let value = max(bytesPerSecond, 0)
         switch value {
-        case ..<1_024: String(format: "%.0f B/s", value)
-        case ..<1_048_576: String(format: "%.1f KB/s", value / 1_024)
-        case ..<1_073_741_824: String(format: "%.1f MB/s", value / 1_048_576)
-        default: String(format: "%.2f GB/s", value / 1_073_741_824)
+        case ..<1_024: return String(format: "%.0f B/s", value)
+        case ..<1_048_576: return String(format: "%.1f KB/s", value / 1_024)
+        case ..<1_073_741_824: return String(format: "%.1f MB/s", value / 1_048_576)
+        default: return String(format: "%.2f GB/s", value / 1_073_741_824)
         }
     }
 

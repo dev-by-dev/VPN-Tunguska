@@ -91,6 +91,13 @@ struct MenuBarContentView: View {
                     .font(.caption)
                     .foregroundStyle(.red)
             }
+
+            Divider()
+
+            Button("Quit Tunguska", role: .destructive) {
+                model.quitFromMenuBar()
+            }
+            .keyboardShortcut("q", modifiers: .command)
         }
         .padding(12)
         .frame(width: 280)
