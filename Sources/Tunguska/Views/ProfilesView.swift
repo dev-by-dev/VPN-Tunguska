@@ -3,6 +3,7 @@ import TunguskaCore
 
 struct ProfilesView: View {
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var settings: AppSettings
 
     var body: some View {
         HSplitView {
@@ -15,8 +16,8 @@ struct ProfilesView: View {
                     if let profile = model.activeProfile {
                         ProfileDetailView(profile: profile)
                     } else {
-                        PanelCard(title: "Profile", systemImage: "rectangle.on.rectangle") {
-                            Text("Select or import a profile.")
+                        PanelCard(title: settings.t(L10n.Key.commonProfile), systemImage: "rectangle.on.rectangle") {
+                            Text(settings.t(L10n.Key.profilesSelectOrImport))
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -25,12 +26,12 @@ struct ProfilesView: View {
                 .frame(maxWidth: 820, alignment: .leading)
             }
         }
-        .navigationTitle("Profiles")
+        .navigationTitle(settings.t(L10n.Key.sidebarProfiles))
     }
 
     private var profileList: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Profiles")
+            Text(settings.t(L10n.Key.sidebarProfiles))
                 .font(.title2.weight(.semibold))
                 .padding([.top, .horizontal], 14)
 
@@ -48,11 +49,11 @@ struct ProfilesView: View {
                         Spacer()
 
                         if profile.id == model.activeProfileID {
-                            Label("Active", systemImage: "checkmark.seal.fill")
+                            Label(settings.t(L10n.Key.profilesActive), systemImage: "checkmark.seal.fill")
                                 .labelStyle(.iconOnly)
                                 .foregroundStyle(.green)
                         } else {
-                            Button("Select") {
+                            Button(settings.t(L10n.Key.commonSelect)) {
                                 model.selectProfile(id: profile.id)
                             }
                             .buttonStyle(.bordered)
@@ -64,7 +65,7 @@ struct ProfilesView: View {
                         model.selectProfile(id: profile.id)
                     }
                     .contextMenu {
-                        Button("Delete", role: .destructive) {
+                        Button(settings.t(L10n.Key.commonDelete), role: .destructive) {
                             model.deleteProfile(id: profile.id)
                         }
                     }
@@ -81,7 +82,7 @@ struct ProfilesView: View {
     }
 
     private var importPanel: some View {
-        PanelCard(title: "Staged import", systemImage: "square.and.arrow.down") {
+        PanelCard(title: settings.t(L10n.Key.profilesStagedImport), systemImage: "square.and.arrow.down") {
             VStack(alignment: .leading, spacing: 12) {
                 TextEditor(text: $model.importText)
                     .font(.system(.body, design: .monospaced))
@@ -89,12 +90,12 @@ struct ProfilesView: View {
                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(.quaternary))
 
                 HStack {
-                    Button("Validate Import") {
+                    Button(settings.t(L10n.Key.profilesValidateImport)) {
                         model.stageImport()
                     }
                     .disabled(model.importText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
-                    Button("Discard", role: .cancel) {
+                    Button(settings.t(L10n.Key.commonDiscard), role: .cancel) {
                         model.discardImport()
                         model.importText = ""
                     }
@@ -102,7 +103,7 @@ struct ProfilesView: View {
 
                     Spacer()
 
-                    Text("Import never auto-connects")
+                    Text(settings.t(L10n.Key.profilesImportNeverAutoConnects))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -115,21 +116,21 @@ struct ProfilesView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         Label(preview.source.summary, systemImage: "checkmark.seal")
                             .foregroundStyle(.green)
-                        LabeledContent("Name", value: preview.profile.name)
-                        LabeledContent("Endpoint", value: preview.profile.endpointSummary)
-                        LabeledContent("Flow", value: preview.profile.outbound.flow ?? "Default")
-                        LabeledContent("SNI", value: preview.profile.outbound.serverName)
+                        LabeledContent(settings.t(L10n.Key.commonName), value: preview.profile.name)
+                        LabeledContent(settings.t(L10n.Key.commonEndpoint), value: preview.profile.endpointSummary)
+                        LabeledContent(settings.t(L10n.Key.commonFlow), value: preview.profile.outbound.flow ?? settings.t(L10n.Key.commonDefault))
+                        LabeledContent(settings.t(L10n.Key.commonSNI), value: preview.profile.outbound.serverName)
 
                         ForEach(preview.warnings, id: \.self) { warning in
                             InlineMessage(text: warning, tone: .warning)
                         }
 
                         HStack {
-                            Button("Save to Keychain") {
+                            Button(settings.t(L10n.Key.profilesSaveToKeychain)) {
                                 model.confirmImport()
                             }
                             .buttonStyle(.borderedProminent)
-                            Button("Discard Preview", role: .cancel) {
+                            Button(settings.t(L10n.Key.profilesDiscardPreview), role: .cancel) {
                                 model.discardImport()
                             }
                         }
@@ -143,39 +144,40 @@ struct ProfilesView: View {
 }
 
 struct ProfileDetailView: View {
+    @EnvironmentObject private var settings: AppSettings
     let profile: ProfileIr
 
     var body: some View {
-        PanelCard(title: "Active profile", systemImage: "rectangle.on.rectangle") {
+        PanelCard(title: settings.t(L10n.Key.profilesActiveProfile), systemImage: "rectangle.on.rectangle") {
             VStack(alignment: .leading, spacing: 14) {
-                LabeledContent("Name", value: profile.name)
-                LabeledContent("Endpoint", value: profile.endpointSummary)
-                LabeledContent("Flow", value: profile.outbound.flow ?? "Default")
+                LabeledContent(settings.t(L10n.Key.commonName), value: profile.name)
+                LabeledContent(settings.t(L10n.Key.commonEndpoint), value: profile.endpointSummary)
+                LabeledContent(settings.t(L10n.Key.commonFlow), value: profile.outbound.flow ?? settings.t(L10n.Key.commonDefault))
                 LabeledContent("uTLS", value: profile.outbound.utlsFingerprint)
                 LabeledContent("Spider X", value: profile.outbound.effectiveRealitySpiderX)
-                LabeledContent("SNI", value: profile.outbound.serverName)
+                LabeledContent(settings.t(L10n.Key.commonSNI), value: profile.outbound.serverName)
 
                 Divider()
 
                 LabeledContent("UUID", value: maskedSecret(profile.outbound.uuid))
-                LabeledContent("REALITY public key", value: maskedSecret(profile.outbound.realityPublicKey))
-                LabeledContent("REALITY short id", value: maskedSecret(profile.outbound.realityShortId))
+                LabeledContent(settings.t(L10n.Key.profilesRealityPublicKey), value: maskedSecret(profile.outbound.realityPublicKey))
+                LabeledContent(settings.t(L10n.Key.profilesRealityShortId), value: maskedSecret(profile.outbound.realityShortId))
 
                 Divider()
 
-                LabeledContent("DNS", value: dnsTitle)
-                LabeledContent("Safe mode", value: profile.safety.safeMode ? "On" : "Off")
-                LabeledContent("Local proxy", value: profile.safety.compatibilityLocalProxy ? "Enabled" : "Disabled")
-                LabeledContent("Debug endpoints", value: profile.safety.debugEndpointsEnabled ? "Enabled" : "Disabled")
+                LabeledContent(settings.t(L10n.Key.homeDnsLabel), value: dnsTitle)
+                LabeledContent(settings.t(L10n.Key.commonSafeMode), value: profile.safety.safeMode ? settings.t(L10n.Key.commonOn) : settings.t(L10n.Key.commonOff))
+                LabeledContent(settings.t(L10n.Key.commonLocalProxy), value: profile.safety.compatibilityLocalProxy ? settings.t(L10n.Key.commonEnabled) : settings.t(L10n.Key.commonDisabled))
+                LabeledContent(settings.t(L10n.Key.commonDebugEndpoints), value: profile.safety.debugEndpointsEnabled ? settings.t(L10n.Key.commonEnabled) : settings.t(L10n.Key.commonDisabled))
             }
         }
     }
 
     private var dnsTitle: String {
         switch profile.dns {
-        case let .vpnDns(servers): "VPN DNS, \(servers.count) servers"
-        case .systemDns: "System DNS"
-        case let .customEncrypted(kind, endpoints): "Custom \(kind.rawValue), \(endpoints.count) endpoints"
+        case let .vpnDns(servers): settings.fmt(L10n.Key.profilesDnsVpnServersFormat, servers.count)
+        case .systemDns: settings.t(L10n.Key.commonSystemDns)
+        case let .customEncrypted(kind, endpoints): settings.fmt(L10n.Key.profilesDnsCustomFormat, kind.rawValue, endpoints.count)
         }
     }
 }

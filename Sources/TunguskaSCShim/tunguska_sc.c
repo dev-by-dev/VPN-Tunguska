@@ -24,3 +24,23 @@ tunguska_SCPreferencesCopyServicesDictionary(SCPreferencesRef prefs, CFStringRef
     }
     return (CFDictionaryRef)value;
 }
+
+CFDictionaryRef CF_RETURNS_RETAINED
+tunguska_SCDynamicStoreCopyGlobalProxies(void) {
+    SCDynamicStoreRef store = SCDynamicStoreCreate(
+        NULL, CFSTR("dev.tunguska.macos.helper.guard"), NULL, NULL);
+    if (store == NULL) {
+        return NULL;
+    }
+    CFPropertyListRef value = SCDynamicStoreCopyValue(
+        store, CFSTR("State:/Network/Global/Proxies"));
+    CFRelease(store);
+    if (value == NULL) {
+        return NULL;
+    }
+    if (CFGetTypeID(value) != CFDictionaryGetTypeID()) {
+        CFRelease(value);
+        return NULL;
+    }
+    return (CFDictionaryRef)value;
+}

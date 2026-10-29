@@ -4,6 +4,7 @@ import TunguskaCore
 
 struct HomeView: View {
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var settings: AppSettings
     @State private var selectedMode: HelperCommandMode = .tun
 
     private var isSessionActive: Bool {
@@ -27,11 +28,11 @@ struct HomeView: View {
             .padding(24)
             .frame(maxWidth: 980, alignment: .leading)
         }
-        .alert("Tunnel error", isPresented: Binding(
+        .alert(settings.t(L10n.Key.homeTunnelErrorTitle), isPresented: Binding(
             get: { model.tunnelError != nil },
             set: { if !$0 { model.clearTunnelError() } }
         )) {
-            Button("OK", role: .cancel) {}
+            Button(settings.t(L10n.Key.commonOK), role: .cancel) {}
         } message: {
             Text(model.tunnelError ?? "")
         }
@@ -40,10 +41,10 @@ struct HomeView: View {
     private var header: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("TUNGUSKA")
+                Text(settings.t(L10n.Key.appName).uppercased())
                     .font(.system(size: 30, weight: .bold, design: .rounded))
                     .tracking(2)
-                Text("Native Apple Silicon VLESS + REALITY client")
+                Text(settings.t(L10n.Key.homeTagline))
                     .font(.title3)
                     .foregroundStyle(.secondary)
             }
@@ -53,7 +54,7 @@ struct HomeView: View {
     }
 
     private var connectionPanel: some View {
-        PanelCard(title: "Connection", systemImage: "gauge.with.needle") {
+        PanelCard(title: settings.t(L10n.Key.homeConnection), systemImage: "gauge.with.needle") {
             HStack(alignment: .center, spacing: 24) {
                 stateGlyph
                     .font(.system(size: 44, weight: .semibold))
@@ -62,9 +63,9 @@ struct HomeView: View {
                     .background(stateColor.opacity(0.12), in: Circle())
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(model.activeProfile?.name ?? "No profile selected")
+                    Text(model.activeProfile?.name ?? settings.t(L10n.Key.commonNoProfileSelected))
                         .font(.title2.weight(.semibold))
-                    Text(model.activeProfile?.endpointSummary ?? "Import a VLESS + REALITY profile to prepare the tunnel.")
+                    Text(model.activeProfile?.endpointSummary ?? settings.t(L10n.Key.homeImportProfileHint))
                         .font(.body.monospaced())
                         .foregroundStyle(.secondary)
                     Text(model.tunnelController.observedState.detail)
@@ -75,9 +76,9 @@ struct HomeView: View {
                 Spacer()
 
                 VStack(alignment: .trailing, spacing: 10) {
-                    Picker("Mode", selection: $selectedMode) {
-                        Text("TUN").tag(HelperCommandMode.tun)
-                        Text("System Proxy").tag(HelperCommandMode.systemProxy)
+                    Picker(settings.t(L10n.Key.homeMode), selection: $selectedMode) {
+                        Text(settings.t(L10n.Key.homeModeTun)).tag(HelperCommandMode.tun)
+                        Text(settings.t(L10n.Key.homeModeSystemProxy)).tag(HelperCommandMode.systemProxy)
                     }
                     .pickerStyle(.segmented)
                     .frame(width: 200)
@@ -95,8 +96,12 @@ struct HomeView: View {
                     }
                     .help(
                         selectedMode == .tun
-                            ? "TUN mode captures all system traffic through a virtual interface."
-                            : "System Proxy mode routes apps that honor the macOS proxy settings through 127.0.0.1:\(HelperProtocol.defaultProxyPort)."
+                            ? settings.t(L10n.Key.homeHelpTun)
+                            : settings.fmt(
+                                L10n.Key.homeHelpSystemProxy,
+                                HelperProtocol.proxyListenHost,
+                                HelperProtocol.defaultProxyPort
+                            )
                     )
 
                     Menu {
@@ -111,7 +116,7 @@ struct HomeView: View {
                             }
                         }
                     } label: {
-                        Text(model.activeProfile?.name ?? "No profile")
+                        Text(model.activeProfile?.name ?? settings.t(L10n.Key.commonNoProfile))
                             .frame(width: 200, alignment: .trailing)
                     }
                     .menuStyle(.borderlessButton)
@@ -127,7 +132,7 @@ struct HomeView: View {
                         }
                     } label: {
                         Label(
-                            model.tunnelController.observedState == .connected ? "Disconnect" : "Start VPN",
+                            model.tunnelController.observedState == .connected ? settings.t(L10n.Key.commonDisconnect) : settings.t(L10n.Key.homeStartVPN),
                             systemImage: model.tunnelController.observedState == .connected ? "stop.fill" : "play.fill"
                         )
                     }
@@ -140,7 +145,7 @@ struct HomeView: View {
     }
 
     private var trafficPanel: some View {
-        PanelCard(title: "Traffic", systemImage: "chart.xyaxis.line") {
+        PanelCard(title: settings.t(L10n.Key.homeTraffic), systemImage: "chart.xyaxis.line") {
             TrafficPanelContent(
                 traffic: model.tunnelController.traffic,
                 isConnected: model.tunnelController.observedState == .connected
@@ -150,35 +155,45 @@ struct HomeView: View {
 
     private var configurationPanels: some View {
         HStack(alignment: .top, spacing: 16) {
-            PanelCard(title: "Tunnel scope", systemImage: "network") {
+            PanelCard(title: settings.t(L10n.Key.homeTunnelScope), systemImage: "network") {
                 if let profile = model.activeProfile {
-                    LabeledContent("Mode", value: splitTunnelTitle(profile.vpn.splitTunnel))
-                    LabeledContent("Packages", value: profile.vpn.splitTunnel.packageNames.isEmpty ? "All applications" : "\(profile.vpn.splitTunnel.packageNames.count) identifiers")
-                    LabeledContent("DNS", value: dnsModeTitle(profile.dns))
+                    LabeledContent(settings.t(L10n.Key.homeMode), value: splitTunnelTitle(profile.vpn.splitTunnel))
+                    LabeledContent(
+                        settings.t(L10n.Key.homePackages),
+                        value: profile.vpn.splitTunnel.packageNames.isEmpty
+                            ? settings.t(L10n.Key.homeAllApplications)
+                            : settings.fmt(L10n.Key.homeIdentifiersFormat, profile.vpn.splitTunnel.packageNames.count)
+                    )
+                    LabeledContent(settings.t(L10n.Key.homeDnsLabel), value: dnsModeTitle(profile.dns))
                 } else {
-                    Text("No profile selected")
+                    Text(settings.t(L10n.Key.commonNoProfileSelected))
                         .foregroundStyle(.secondary)
                 }
             }
 
-            PanelCard(title: "Routing", systemImage: "arrow.triangle.branch") {
+            PanelCard(title: settings.t(L10n.Key.sidebarRouting), systemImage: "arrow.triangle.branch") {
                 if let profile = model.activeProfile {
-                    LabeledContent("Default", value: profile.routing.defaultAction.rawValue)
-                    LabeledContent("Rules", value: "\(profile.routing.rules.count)")
-                    LabeledContent("Regional bypass", value: profile.routing.regionalBypass.enabledPresets.isEmpty ? "Off" : profile.routing.regionalBypass.enabledPresets.map { $0.rawValue }.joined(separator: ", "))
+                    LabeledContent(settings.t(L10n.Key.commonDefault), value: profile.routing.defaultAction.rawValue)
+                    LabeledContent(settings.t(L10n.Key.homeRoutingRules), value: "\(profile.routing.rules.count)")
+                    LabeledContent(
+                        settings.t(L10n.Key.homeRegionalBypass),
+                        value: profile.routing.regionalBypass.enabledPresets.isEmpty
+                            ? settings.t(L10n.Key.commonOff)
+                            : profile.routing.regionalBypass.enabledPresets.map { $0.rawValue }.joined(separator: ", ")
+                    )
                 } else {
-                    Text("No profile selected")
+                    Text(settings.t(L10n.Key.commonNoProfileSelected))
                         .foregroundStyle(.secondary)
                 }
             }
 
-            PanelCard(title: "Safety", systemImage: "lock.shield") {
+            PanelCard(title: settings.t(L10n.Key.homeSafetyPanel), systemImage: "lock.shield") {
                 if let profile = model.activeProfile {
-                    LabeledContent("Safe mode", value: profile.safety.safeMode ? "On" : "Off")
-                    LabeledContent("Local proxy", value: profile.safety.compatibilityLocalProxy ? "Enabled" : "Disabled")
-                    LabeledContent("Debug endpoints", value: profile.safety.debugEndpointsEnabled ? "Enabled" : "Disabled")
+                    LabeledContent(settings.t(L10n.Key.commonSafeMode), value: profile.safety.safeMode ? settings.t(L10n.Key.commonOn) : settings.t(L10n.Key.commonOff))
+                    LabeledContent(settings.t(L10n.Key.commonLocalProxy), value: profile.safety.compatibilityLocalProxy ? settings.t(L10n.Key.commonEnabled) : settings.t(L10n.Key.commonDisabled))
+                    LabeledContent(settings.t(L10n.Key.commonDebugEndpoints), value: profile.safety.debugEndpointsEnabled ? settings.t(L10n.Key.commonEnabled) : settings.t(L10n.Key.commonDisabled))
                 } else {
-                    Text("No profile selected")
+                    Text(settings.t(L10n.Key.commonNoProfileSelected))
                         .foregroundStyle(.secondary)
                 }
             }
@@ -186,12 +201,12 @@ struct HomeView: View {
     }
 
     private var runtimeIntegrityPanel: some View {
-        PanelCard(title: "Runtime integrity", systemImage: "checkmark.shield") {
+        PanelCard(title: settings.t(L10n.Key.homeRuntimeIntegrity), systemImage: "checkmark.shield") {
             VStack(alignment: .leading, spacing: 8) {
-                Label("Connected UI state requires a live TUN interface from the privileged service.", systemImage: "network.badge.shield.half.filled")
-                Label("Loopback traffic remains local by policy.", systemImage: "arrow.clockwise")
-                Label("Profile secrets are read from Keychain storage, not UserDefaults or logs.", systemImage: "key.fill")
-                Label("The Clash-Verge-style arm64 helper starts a pinned sing-box CLI and owns routes/DNS.", systemImage: "shippingbox")
+                Label(settings.t(L10n.Key.homeIntegrityConnectedUI), systemImage: "network.badge.shield.half.filled")
+                Label(settings.t(L10n.Key.homeIntegrityLoopback), systemImage: "arrow.clockwise")
+                Label(settings.t(L10n.Key.homeIntegritySecrets), systemImage: "key.fill")
+                Label(settings.t(L10n.Key.homeIntegrityHelper), systemImage: "shippingbox")
             }
             .font(.callout)
             .foregroundStyle(.secondary)
@@ -213,22 +228,23 @@ struct HomeView: View {
 
     private func splitTunnelTitle(_ mode: SplitTunnelMode) -> String {
         switch mode {
-        case .fullTunnel: "Full tunnel"
-        case .allowlist: "Allowlist"
-        case .denylist: "Denylist"
+        case .fullTunnel: settings.t(L10n.Key.homeSplitTunnelFull)
+        case .allowlist: settings.t(L10n.Key.homeSplitTunnelAllowlist)
+        case .denylist: settings.t(L10n.Key.homeSplitTunnelDenylist)
         }
     }
 
     private func dnsModeTitle(_ mode: DnsMode) -> String {
         switch mode {
-        case let .vpnDns(servers): "VPN DNS (\(servers.count))"
-        case .systemDns: "System DNS"
-        case let .customEncrypted(kind, endpoints): "Encrypted DNS \(kind.rawValue) (\(endpoints.count))"
+        case let .vpnDns(servers): settings.fmt(L10n.Key.homeDnsVpnFormat, servers.count)
+        case .systemDns: settings.t(L10n.Key.commonSystemDns)
+        case let .customEncrypted(kind, endpoints): settings.fmt(L10n.Key.homeDnsCustomFormat, kind.rawValue, endpoints.count)
         }
     }
 }
 
 private struct TrafficPanelContent: View {
+    @EnvironmentObject private var settings: AppSettings
     @ObservedObject var traffic: TrafficMonitor
     let isConnected: Bool
 
@@ -237,20 +253,20 @@ private struct TrafficPanelContent: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 24) {
                     trafficStat(
-                        title: "Down",
+                        title: settings.t(L10n.Key.homeTrafficDown),
                         color: .blue,
                         rate: TrafficFormat.rate(traffic.currentDownBytesPerSecond),
                         total: TrafficFormat.total(traffic.totalDownBytes)
                     )
                     trafficStat(
-                        title: "Up",
+                        title: settings.t(L10n.Key.homeTrafficUp),
                         color: .green,
                         rate: TrafficFormat.rate(traffic.currentUpBytesPerSecond),
                         total: TrafficFormat.total(traffic.totalUpBytes)
                     )
                     Spacer()
                     if let startedAt = traffic.sessionStartedAt {
-                        Text("Session \(startedAt, style: .relative)")
+                        Text("\(settings.t(L10n.Key.homeSession)) \(startedAt, style: .relative)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -278,7 +294,7 @@ private struct TrafficPanelContent: View {
                 .frame(height: 130)
             }
         } else {
-            Text("Connect the VPN to see live speed, session traffic, and volume totals.")
+            Text(settings.t(L10n.Key.homeTrafficEmpty))
                 .foregroundStyle(.secondary)
         }
     }
@@ -294,7 +310,7 @@ private struct TrafficPanelContent: View {
                     .foregroundStyle(.secondary)
                 Text(rate)
                     .font(.title3.monospacedDigit().weight(.semibold))
-                Text("\(total) total")
+                Text(settings.fmt(L10n.Key.homeTrafficTotal, total))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

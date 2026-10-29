@@ -10,33 +10,39 @@ enum TunnelObservedState: Equatable {
     case failed(String)
     case unavailable(String)
 
-    var title: String {
+    func title(language: AppLanguage) -> String {
         switch self {
-        case .disconnected: "Disconnected"
-        case .connecting: "Connecting"
-        case .connected: "Connected"
-        case .disconnecting: "Disconnecting"
-        case .failed: "Failed"
-        case .unavailable: "Unavailable"
+        case .disconnected: L10n.t(L10n.Key.stateDisconnected, language: language)
+        case .connecting: L10n.t(L10n.Key.stateConnecting, language: language)
+        case .connected: L10n.t(L10n.Key.stateConnected, language: language)
+        case .disconnecting: L10n.t(L10n.Key.stateDisconnecting, language: language)
+        case .failed: L10n.t(L10n.Key.stateFailed, language: language)
+        case .unavailable: L10n.t(L10n.Key.stateUnavailable, language: language)
         }
     }
 
-    var detail: String {
+    func detail(language: AppLanguage) -> String {
         switch self {
         case .disconnected:
-            "No privileged session is active."
+            L10n.t(L10n.Key.stateDisconnectedDetail, language: language)
         case .connecting:
-            "The sing-box service is starting; the UI stays non-connected until the session is live."
+            L10n.t(L10n.Key.stateConnectingDetail, language: language)
         case .connected:
-            "The privileged sing-box service reported a live session."
+            L10n.t(L10n.Key.stateConnectedDetail, language: language)
         case .disconnecting:
-            "The privileged service is stopping the tunnel."
+            L10n.t(L10n.Key.stateDisconnectingDetail, language: language)
         case let .failed(message):
             message
         case let .unavailable(message):
             message
         }
     }
+
+    /// Title in the currently active UI language.
+    @MainActor var title: String { title(language: AppSettings.shared.appLanguage) }
+
+    /// Detail in the currently active UI language.
+    @MainActor var detail: String { detail(language: AppSettings.shared.appLanguage) }
 }
 
 enum TunnelControllerError: LocalizedError {
@@ -45,15 +51,19 @@ enum TunnelControllerError: LocalizedError {
     case startFailed(String)
     case stopFailed(String)
 
-    var errorDescription: String? {
-        switch self {
-        case let .invalidProfile(issues):
-            let details = issues.map { "\($0.field): \($0.message)" }.joined(separator: "; ")
-            return "The selected profile cannot be used by the tunnel: \(details)"
-        case let .configurationFailed(message),
-             let .startFailed(message),
-             let .stopFailed(message):
-            return message
+    /// These errors surface only from MainActor UI/model code; the lookup of
+    /// the active language is safe to perform under `assumeIsolated`.
+    nonisolated var errorDescription: String? {
+        MainActor.assumeIsolated {
+            switch self {
+            case let .invalidProfile(issues):
+                let details = issues.map { "\($0.field): \($0.message)" }.joined(separator: "; ")
+                return L10n.fmt(L10n.Key.errorInvalidProfileFormat, details)
+            case let .configurationFailed(message),
+                 let .startFailed(message),
+                 let .stopFailed(message):
+                return message
+            }
         }
     }
 }
@@ -62,7 +72,7 @@ enum TunnelControllerError: LocalizedError {
 final class TunnelController: ObservableObject {
     private static let logger = Logger(subsystem: "dev.tunguska.macos", category: "tunnel")
 
-    @Published private(set) var observedState: TunnelObservedState = .unavailable("The privileged tunnel service has not been checked yet.")
+    @Published private(set) var observedState: TunnelObservedState = .unavailable(L10n.t(L10n.Key.errorServiceNotChecked))
     @Published private(set) var isPreparing = false
     @Published private(set) var connectedInterface: String?
     @Published private(set) var activeMode: HelperCommandMode = .tun
@@ -138,20 +148,20 @@ final class TunnelController: ObservableObject {
         await apply(response)
 
         guard response.ok else {
-            let message = response.message ?? "The privileged tunnel service could not start sing-box."
+            let message = response.message ?? L10n.t(L10n.Key.errorHelperStartFailed)
             observedState = .failed(message)
             throw TunnelControllerError.startFailed(message)
         }
 
         guard response.status?.state == .running else {
-            let message = response.message ?? "sing-box did not report a live session."
+            let message = response.message ?? L10n.t(L10n.Key.errorNoLiveSession)
             observedState = .failed(message)
             throw TunnelControllerError.startFailed(message)
         }
 
         if mode == .tun {
             guard response.status?.interface != nil else {
-                let message = response.message ?? "sing-box did not report a live TUN interface."
+                let message = response.message ?? L10n.t(L10n.Key.errorNoTunInterface)
                 observedState = .failed(message)
                 throw TunnelControllerError.startFailed(message)
             }
@@ -174,7 +184,7 @@ final class TunnelController: ObservableObject {
         }
 
         guard response.ok else {
-            let message = response.message ?? "The privileged tunnel service could not stop sing-box."
+            let message = response.message ?? L10n.t(L10n.Key.errorHelperStopFailed)
             Self.logger.error("helper stop rejected: \(message, privacy: .public)")
             observedState = .failed(message)
             throw TunnelControllerError.stopFailed(message)
@@ -187,7 +197,7 @@ final class TunnelController: ObservableObject {
         guard let status = response.status else {
             connectedInterface = nil
             traffic.stop()
-            observedState = response.ok ? .disconnected : .failed(response.message ?? "The helper response was incomplete.")
+            observedState = response.ok ? .disconnected : .failed(response.message ?? L10n.t(L10n.Key.errorIncompleteResponse))
             return
         }
 
@@ -224,13 +234,13 @@ final class TunnelController: ObservableObject {
                     traffic.start(interface: interface)
                     observedState = .connected
                 } else {
-                    observedState = .failed(status.message ?? "The helper reported a running engine without a TUN interface.")
+                    observedState = .failed(status.message ?? L10n.t(L10n.Key.errorNoTunReported))
                 }
             }
         case .failed:
             connectedInterface = nil
             traffic.stop()
-            observedState = .failed(status.message ?? "The tunnel service reported a failure.")
+            observedState = .failed(status.message ?? L10n.t(L10n.Key.errorServiceFailure))
         }
     }
 }

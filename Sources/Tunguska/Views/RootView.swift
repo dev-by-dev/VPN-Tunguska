@@ -3,9 +3,12 @@ import TunguskaCore
 
 struct RootView: View {
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var settings: AppSettings
     @State private var selectedSection: AppModel.Section = {
         // Automated smoke-test hook: open -n Tunguska.app --args -open-section-profiles
-        ProcessInfo.processInfo.arguments.contains("-open-section-profiles") ? .profiles : .home
+        if ProcessInfo.processInfo.arguments.contains("-open-section-profiles") { return .profiles }
+        if ProcessInfo.processInfo.arguments.contains("-open-section-settings") { return .settings }
+        return .home
     }()
     @State private var columnVisibility = NavigationSplitViewVisibility.all
 
@@ -18,12 +21,12 @@ struct RootView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color(nsColor: .underPageBackgroundColor))
         }
-        .navigationTitle("Tunguska")
+        .navigationTitle(settings.t(L10n.Key.appName))
     }
 
     private var sidebar: some View {
         List(AppModel.Section.allCases, selection: $selectedSection) { section in
-            Label(section.rawValue, systemImage: section.iconName)
+            Label(settings.t(section.labelKey), systemImage: section.iconName)
                 .tag(section)
         }
         .listStyle(.sidebar)
@@ -40,18 +43,21 @@ struct RootView: View {
             RoutingView()
         case .security:
             SecurityView()
+        case .settings:
+            SettingsView()
         }
     }
 }
 
 struct MenuBarContentView: View {
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var settings: AppSettings
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Image(systemName: model.tunnelController.statusImageName)
-                Text("Tunguska")
+                Text(settings.t(L10n.Key.appName))
                     .font(.headline)
                 Spacer()
                 StatusPill(state: model.tunnelController.observedState)
@@ -65,7 +71,7 @@ struct MenuBarContentView: View {
                     .font(.caption.monospaced())
                     .foregroundStyle(.secondary)
             } else {
-                Text("No profile selected")
+                Text(settings.t(L10n.Key.commonNoProfileSelected))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -73,8 +79,8 @@ struct MenuBarContentView: View {
             if model.tunnelController.observedState == .connected {
                 Text(
                     model.tunnelController.activeMode == .systemProxy
-                        ? "System proxy · \(HelperProtocol.proxyListenHost):\(HelperProtocol.defaultProxyPort)"
-                        : "TUN mode"
+                        ? settings.fmt(L10n.Key.menubarSystemProxyFormat, HelperProtocol.proxyListenHost, HelperProtocol.defaultProxyPort)
+                        : settings.t(L10n.Key.menubarTunMode)
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -92,7 +98,7 @@ struct MenuBarContentView: View {
                 }
             } label: {
                 Label(
-                    model.tunnelController.observedState == .connected ? "Disconnect" : "Connect",
+                    model.tunnelController.observedState == .connected ? settings.t(L10n.Key.commonDisconnect) : settings.t(L10n.Key.commonConnect),
                     systemImage: model.tunnelController.observedState == .connected ? "stop.fill" : "play.fill"
                 )
                 .foregroundStyle(.primary)
@@ -103,7 +109,7 @@ struct MenuBarContentView: View {
             Button {
                 NSApp.activate(ignoringOtherApps: true)
             } label: {
-                Label("Open Tunguska", systemImage: "macwindow")
+                Label(settings.t(L10n.Key.menubarOpenApp), systemImage: "macwindow")
                     .foregroundStyle(.primary)
             }
             .buttonStyle(MenuRowButtonStyle())
@@ -119,7 +125,7 @@ struct MenuBarContentView: View {
             Button {
                 model.quitFromMenuBar()
             } label: {
-                Label("Quit Tunguska", systemImage: "power")
+                Label(settings.t(L10n.Key.menubarQuitApp), systemImage: "power")
                     .foregroundStyle(.primary)
             }
             .buttonStyle(MenuRowButtonStyle())

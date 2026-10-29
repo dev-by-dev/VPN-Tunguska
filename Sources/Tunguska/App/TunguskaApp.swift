@@ -16,12 +16,14 @@ struct TunguskaApp: App {
         WindowGroup("Tunguska") {
             RootView()
                 .environmentObject(appModel)
+                .environmentObject(AppSettings.shared)
                 .frame(minWidth: 980, minHeight: 660)
         }
 
         MenuBarExtra {
             MenuBarContentView()
                 .environmentObject(appModel)
+                .environmentObject(AppSettings.shared)
         } label: {
             Label("Tunguska", systemImage: appModel.tunnelController.statusImageName)
         }

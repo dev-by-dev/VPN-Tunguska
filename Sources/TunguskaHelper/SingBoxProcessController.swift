@@ -19,6 +19,8 @@ final class SingBoxProcessController: @unchecked Sendable {
     private var lastMessage: String?
     private var mode: HelperCommandMode = .tun
     private var proxyPort: Int?
+    private var proxyGuardTimer: DispatchSourceTimer?
+    private let proxyGuardQueue = DispatchQueue(label: "dev.tunguska.macos.helper.proxyguard")
 
     init() {
         try? FileManager.default.createDirectory(
@@ -134,6 +136,7 @@ final class SingBoxProcessController: @unchecked Sendable {
             process = nil
             startedAt = nil
             lastMessage = "sing-box stopped (\(reason))."
+            stopProxyGuardLocked()
             // If the engine dies on its own, release the system proxy instead of
             // leaving macOS pointed at a dead port.
             if activeMode == .systemProxy, SystemProxyController.isConfigured {
@@ -159,7 +162,12 @@ final class SingBoxProcessController: @unchecked Sendable {
         case .tun:
             return waitForTunInterface(singBox, expectedAddress: expectedAddress)
         case .systemProxy:
-            return waitForProxyPort(singBox, port: activeProxyPort ?? HelperProtocol.defaultProxyPort)
+            return waitForProxyPort(
+                singBox,
+                port: activeProxyPort ?? HelperProtocol.defaultProxyPort,
+                guardEnabled: request.proxyGuardEnabled == true,
+                guardInterval: request.proxyGuardInterval ?? 10
+            )
         }
     }
 
@@ -183,7 +191,12 @@ final class SingBoxProcessController: @unchecked Sendable {
         return HelperResponse(ok: false, status: snapshotLocked().helperStatus, message: lastMessage)
     }
 
-    private func waitForProxyPort(_ singBox: Process, port: Int) -> HelperResponse {
+    private func waitForProxyPort(
+        _ singBox: Process,
+        port: Int,
+        guardEnabled: Bool,
+        guardInterval: Int
+    ) -> HelperResponse {
         lastMessage = "sing-box launched; waiting for the local proxy port."
 
         let deadline = Date().addingTimeInterval(8)
@@ -199,6 +212,9 @@ final class SingBoxProcessController: @unchecked Sendable {
                     lastMessage = "sing-box started, but the system proxy could not be configured: \(error.localizedDescription)"
                     return HelperResponse(ok: false, status: snapshotLocked().helperStatus, message: lastMessage)
                 }
+                if guardEnabled {
+                    startProxyGuardLocked(port: port, interval: guardInterval)
+                }
                 lastMessage = "System proxy is active on \(HelperProtocol.proxyListenHost):\(port)."
                 return HelperResponse(ok: true, status: snapshotLocked().helperStatus, message: lastMessage)
             }
@@ -208,6 +224,31 @@ final class SingBoxProcessController: @unchecked Sendable {
         stopLocked()
         lastMessage = "sing-box started, but the local proxy port \(port) never accepted connections."
         return HelperResponse(ok: false, status: snapshotLocked().helperStatus, message: lastMessage)
+    }
+
+    /// Re-applies the system proxy whenever the live state drifts away from the
+    /// local mixed inbound, the way Clash Verge's proxy guard does. The timer only
+    /// rewrites the settings; it never touches the restore snapshot.
+    private func startProxyGuardLocked(port: Int, interval: Int) {
+        stopProxyGuardLocked()
+        let seconds = max(5, min(interval, 3600))
+        let timer = DispatchSource.makeTimerSource(queue: proxyGuardQueue)
+        timer.schedule(deadline: .now() + .seconds(seconds), repeating: .seconds(seconds))
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            self.lock.lock()
+            defer { self.lock.unlock() }
+            guard self.process?.isRunning == true, self.mode == .systemProxy else { return }
+            guard !SystemProxyController.systemProxiesMatch(port: port) else { return }
+            try? SystemProxyController.apply(port: port, resnapshot: false)
+        }
+        timer.resume()
+        proxyGuardTimer = timer
+    }
+
+    private func stopProxyGuardLocked() {
+        proxyGuardTimer?.cancel()
+        proxyGuardTimer = nil
     }
 
     private func writeConfig(_ config: String) throws -> URL {
@@ -236,6 +277,7 @@ final class SingBoxProcessController: @unchecked Sendable {
     }
 
     private func stopLocked() {
+        stopProxyGuardLocked()
         guard let running = process else {
             if let configPath {
                 removeConfig(at: configPath)

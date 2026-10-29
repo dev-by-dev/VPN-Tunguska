@@ -23,6 +23,7 @@ The core package and its tests can also be built with Swift Command Line Tools.
 
 - `Sources/TunguskaCore`: platform-independent profile, import, validation, routing, backup, diagnostics, and helper protocol logic
 - `Sources/Tunguska`: SwiftUI application, AppModel, Keychain profile store, tunnel controller, and local helper client
+- `Sources/Tunguska/Localization`: runtime localization layer (English, German, Russian, Chinese). All new user-facing strings go through the `L10n` lookup (`settings.t(...)` / `settings.fmt(...)` in views); the four-language completeness test in `Tests/TunguskaTests` guards the string table against missing translations
 - `Sources/TunguskaHelper`: privileged LaunchDaemon executable that validates requests, starts/stops `sing-box`, and observes the TUN interface
 - `Sources/TunguskaTunnel`: legacy NetworkExtension packet-tunnel provider with libbox setup; retained as a Team-signed alternative, not used by the helper path
 - `Tests/TunguskaCoreTests`: core unit tests

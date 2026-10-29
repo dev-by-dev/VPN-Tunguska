@@ -19,19 +19,27 @@ public struct HelperRequest: Codable, Equatable, Sendable {
     public var config: String?
     public var expectedInterfaceAddress: String?
     public var mode: HelperCommandMode?
+    /// Re-apply the system proxy if another app resets it while a
+    /// system-proxy session is live (Clash Verge's proxy guard).
+    public var proxyGuardEnabled: Bool?
+    public var proxyGuardInterval: Int?
 
     public init(
         action: HelperCommandAction,
         profileID: String? = nil,
         config: String? = nil,
         expectedInterfaceAddress: String? = nil,
-        mode: HelperCommandMode? = nil
+        mode: HelperCommandMode? = nil,
+        proxyGuardEnabled: Bool? = nil,
+        proxyGuardInterval: Int? = nil
     ) {
         self.action = action
         self.profileID = profileID
         self.config = config
         self.expectedInterfaceAddress = expectedInterfaceAddress
         self.mode = mode
+        self.proxyGuardEnabled = proxyGuardEnabled
+        self.proxyGuardInterval = proxyGuardInterval
     }
 
     public static func status() -> HelperRequest {
@@ -42,14 +50,18 @@ public struct HelperRequest: Codable, Equatable, Sendable {
         profileID: String,
         config: String,
         mode: HelperCommandMode = .tun,
-        expectedInterfaceAddress: String? = HelperProtocol.defaultTunAddress
+        expectedInterfaceAddress: String? = HelperProtocol.defaultTunAddress,
+        proxyGuardEnabled: Bool? = nil,
+        proxyGuardInterval: Int? = nil
     ) -> HelperRequest {
         HelperRequest(
             action: .start,
             profileID: profileID,
             config: config,
             expectedInterfaceAddress: expectedInterfaceAddress,
-            mode: mode
+            mode: mode,
+            proxyGuardEnabled: proxyGuardEnabled,
+            proxyGuardInterval: proxyGuardInterval
         )
     }
 

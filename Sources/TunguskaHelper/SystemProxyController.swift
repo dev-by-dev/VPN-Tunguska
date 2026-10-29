@@ -59,7 +59,9 @@ enum SystemProxyController {
 
     /// Points HTTP, HTTPS, and SOCKS proxies of every network service at the local
     /// mixed inbound. Existing per-service proxy dictionaries are snapshotted first.
-    static func apply(port: Int) throws {
+    /// `resnapshot: false` re-applies the same settings without touching the saved
+    /// snapshot; the proxy guard uses it after another app resets the system proxy.
+    static func apply(port: Int, resnapshot: Bool = true) throws {
         let preferences = SCPreferencesCreate(nil, "dev.tunguska.macos.helper" as CFString, nil)
         guard let preferences else {
             throw SystemProxyError.preferencesUnavailable
@@ -68,25 +70,55 @@ enum SystemProxyController {
 
         var snapshot: [String: [String: Any]] = [:]
         for (serviceID, service) in services where service["Interface"] is [String: Any] {
-            let existing = service[serviceProxiesKey] as? [String: Any] ?? [:]
-            snapshot[serviceID] = existing
+            if resnapshot {
+                let existing = service[serviceProxiesKey] as? [String: Any] ?? [:]
+                snapshot[serviceID] = existing
+            }
 
             var updated = service
-            updated[serviceProxiesKey] = proxySettings(port: port, preserving: existing)
+            updated[serviceProxiesKey] = proxySettings(port: port, preserving: service[serviceProxiesKey] as? [String: Any] ?? [:])
             services[serviceID] = updated
         }
-        guard !snapshot.isEmpty else {
+        guard !resnapshot || !snapshot.isEmpty else {
             throw SystemProxyError.servicesUnavailable
         }
 
-        try writePlist(snapshot, to: snapshotURL)
+        if resnapshot {
+            try writePlist(snapshot, to: snapshotURL)
+        }
         do {
             try commit(services, using: preferences)
         } catch {
             // Never leave a snapshot behind for settings that were not applied.
-            try? FileManager.default.removeItem(at: snapshotURL)
+            if resnapshot {
+                try? FileManager.default.removeItem(at: snapshotURL)
+            }
             throw error
         }
+    }
+
+    /// True when the live system-wide proxy state still points at the local mixed
+    /// inbound. The proxy guard polls this and re-applies on drift.
+    static func systemProxiesMatch(port: Int) -> Bool {
+        guard let dictionary = tunguska_SCDynamicStoreCopyGlobalProxies() else {
+            return false
+        }
+        let proxies = dictionary as NSDictionary as? [String: Any] ?? [:]
+
+        func isEnabled(_ key: String) -> Bool { (proxies[key] as? Int) == 1 }
+        func host(_ key: String) -> String? { proxies[key] as? String }
+        func proxyPort(_ key: String) -> Int? { proxies[key] as? Int }
+
+        let listenHost = HelperProtocol.proxyListenHost
+        return isEnabled(kSCPropNetProxiesHTTPEnable as String)
+            && host(kSCPropNetProxiesHTTPProxy as String) == listenHost
+            && proxyPort(kSCPropNetProxiesHTTPPort as String) == port
+            && isEnabled(kSCPropNetProxiesHTTPSEnable as String)
+            && host(kSCPropNetProxiesHTTPSProxy as String) == listenHost
+            && proxyPort(kSCPropNetProxiesHTTPSPort as String) == port
+            && isEnabled(kSCPropNetProxiesSOCKSEnable as String)
+            && host(kSCPropNetProxiesSOCKSProxy as String) == listenHost
+            && proxyPort(kSCPropNetProxiesSOCKSPort as String) == port
     }
 
     /// Writes the snapshotted proxy dictionaries back and removes the snapshot.

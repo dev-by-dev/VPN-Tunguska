@@ -6,12 +6,23 @@ import TunguskaCore
 @MainActor
 final class AppModel: ObservableObject {
     enum Section: String, CaseIterable, Identifiable {
-        case home = "Home"
-        case profiles = "Profiles"
-        case routing = "Routing"
-        case security = "Security"
+        case home = "home"
+        case profiles = "profiles"
+        case routing = "routing"
+        case security = "security"
+        case settings = "settings"
 
         var id: String { rawValue }
+
+        var labelKey: String {
+            switch self {
+            case .home: L10n.Key.sidebarHome
+            case .profiles: L10n.Key.sidebarProfiles
+            case .routing: L10n.Key.sidebarRouting
+            case .security: L10n.Key.sidebarSecurity
+            case .settings: L10n.Key.sidebarSettings
+            }
+        }
 
         var iconName: String {
             switch self {
@@ -19,6 +30,7 @@ final class AppModel: ObservableObject {
             case .profiles: "rectangle.on.rectangle"
             case .routing: "arrow.triangle.branch"
             case .security: "lock.shield"
+            case .settings: "gearshape"
             }
         }
     }
@@ -137,7 +149,7 @@ final class AppModel: ObservableObject {
 
     func deleteProfile(id: String) {
         guard tunnelController.observedState != .connected else {
-            storageError = "Disconnect the active VPN session before deleting a profile."
+            storageError = L10n.t(L10n.Key.errorDeleteWhileConnected)
             return
         }
         do {
@@ -173,10 +185,10 @@ final class AppModel: ObservableObject {
 
     func evaluateRoutePreview(_ form: RoutePreviewForm) -> RoutePreviewEvaluation {
         guard let profile = activeProfile else {
-            return .failure("Select a profile before evaluating a route.")
+            return .failure(L10n.t(L10n.Key.errorSelectProfileFirst))
         }
         guard let destinationPort = form.portValue else {
-            return .failure("Destination port must be empty or an integer between 1 and 65535.")
+            return .failure(L10n.t(L10n.Key.errorInvalidDestinationPort))
         }
 
         let request = RoutePreviewRequest(
@@ -214,7 +226,7 @@ final class AppModel: ObservableObject {
     func connectActiveProfile() async {
         tunnelError = nil
         guard let profile = activeProfile else {
-            tunnelError = "Import and select a profile before starting the VPN."
+            tunnelError = L10n.t(L10n.Key.errorNoProfileToConnect)
             return
         }
         do {
@@ -279,12 +291,15 @@ enum AppModelError: LocalizedError {
     case vpnMustBeStopped
     case storage(String)
 
-    var errorDescription: String? {
-        switch self {
-        case .vpnMustBeStopped:
-            return "Stop the VPN before restoring a profile backup."
-        case .storage(let message):
-            return message
+    /// Surfaced only from MainActor UI code; see `TunnelControllerError`.
+    nonisolated var errorDescription: String? {
+        MainActor.assumeIsolated {
+            switch self {
+            case .vpnMustBeStopped:
+                return L10n.t(L10n.Key.errorVpnMustBeStopped)
+            case .storage(let message):
+                return message
+            }
         }
     }
 }

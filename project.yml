@@ -141,3 +141,15 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.tunguska.macos.core.tests
         GENERATE_INFOPLIST_FILE: YES
+
+  TunguskaTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/TunguskaTests
+    dependencies:
+      - target: Tunguska
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.tunguska.macos.tests
+        GENERATE_INFOPLIST_FILE: YES

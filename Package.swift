@@ -36,6 +36,11 @@ let package = Package(
             dependencies: ["TunguskaCore"],
             path: "Sources/Tunguska"
         ),
+        .testTarget(
+            name: "TunguskaTests",
+            dependencies: ["Tunguska"],
+            path: "Tests/TunguskaTests"
+        ),
         .executableTarget(
             name: "TunguskaHelper",
             dependencies: ["TunguskaCore", "TunguskaSCShim"],

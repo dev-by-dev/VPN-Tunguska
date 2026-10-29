@@ -20,4 +20,12 @@ tunguska_SCPreferencesCopyServicesDictionary(
     SCPreferencesRef prefs,
     CFStringRef key);
 
+/*
+ * Reads the live (dynamic-store) global proxies dictionary. SCDynamicStoreCopyValue
+ * also returns an untyped CFPropertyListRef, so it needs the same wrapper. Used by
+ * the proxy guard to detect when another app resets the system proxy.
+ */
+CFDictionaryRef _Nullable CF_RETURNS_RETAINED
+tunguska_SCDynamicStoreCopyGlobalProxies(void);
+
 #endif /* TUNGUSKA_SC_SHIM_H */

@@ -50,7 +50,8 @@ public enum SingBoxConfigurationBuilder {
 
     public static func build(
         profile: ProfileIr,
-        mode: HelperCommandMode = .tun
+        mode: HelperCommandMode = .tun,
+        proxyPort: Int = HelperProtocol.defaultProxyPort
     ) throws -> SingBoxGeneratedConfiguration {
         let issues = profile.validationIssues()
         guard issues.isEmpty else {
@@ -69,7 +70,7 @@ public enum SingBoxConfigurationBuilder {
                 "timestamp": true,
             ],
             "dns": dns,
-            "inbounds": makeInbounds(mode: mode),
+            "inbounds": makeInbounds(mode: mode, proxyPort: proxyPort),
             "outbounds": [
                 makeOutbound(profile.outbound),
                 ["type": "direct", "tag": directTag],
@@ -108,7 +109,7 @@ public enum SingBoxConfigurationBuilder {
     /// TUN mode owns the routing table via a virtual interface; system-proxy mode only
     /// exposes a loopback mixed (HTTP + SOCKS) inbound that the helper registers with
     /// macOS as the system proxy, the way Clash Verge's sysproxy flow works.
-    private static func makeInbounds(mode: HelperCommandMode) -> [[String: Any]] {
+    private static func makeInbounds(mode: HelperCommandMode, proxyPort: Int) -> [[String: Any]] {
         switch mode {
         case .tun:
             return [
@@ -128,7 +129,7 @@ public enum SingBoxConfigurationBuilder {
                     "type": "mixed",
                     "tag": mixedTag,
                     "listen": HelperProtocol.proxyListenHost,
-                    "listen_port": HelperProtocol.defaultProxyPort,
+                    "listen_port": proxyPort,
                 ],
             ]
         }

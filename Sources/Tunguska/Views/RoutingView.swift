@@ -3,6 +3,7 @@ import TunguskaCore
 
 struct RoutingView: View {
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var settings: AppSettings
     @State private var previewForm = RoutePreviewForm()
     @State private var previewOutcome: RoutePreviewEvaluation?
 
@@ -14,8 +15,8 @@ struct RoutingView: View {
                     routePreviewPanel(profile)
                     effectiveRulesPanel(profile)
                 } else {
-                    PanelCard(title: "Routing", systemImage: "arrow.triangle.branch") {
-                        Text("Select a profile to inspect and preview routing.")
+                    PanelCard(title: settings.t(L10n.Key.sidebarRouting), systemImage: "arrow.triangle.branch") {
+                        Text(settings.t(L10n.Key.routingEmpty))
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -23,13 +24,13 @@ struct RoutingView: View {
             .padding(24)
             .frame(maxWidth: 900, alignment: .leading)
         }
-        .navigationTitle("Routing")
+        .navigationTitle(settings.t(L10n.Key.sidebarRouting))
     }
 
     private func regionalBypassPanel(_ profile: ProfileIr) -> some View {
-        PanelCard(title: "Regional bypass", systemImage: "map") {
+        PanelCard(title: settings.t(L10n.Key.homeRegionalBypass), systemImage: "map") {
             VStack(alignment: .leading, spacing: 14) {
-                Toggle("Route Russian domains (.ru, .su, .xn--p1ai) directly", isOn: Binding(
+                Toggle(settings.t(L10n.Key.routingRussiaToggle), isOn: Binding(
                     get: { profile.routing.regionalBypass.isPresetEnabled(.russia) },
                     set: { enabled in
                         model.updateActiveProfile { current in
@@ -44,14 +45,14 @@ struct RoutingView: View {
                     }
                 ))
 
-                Text("GeoIP:RU is shown as a runtime hint until a regional dataset is bundled; the local configuration applies domain suffixes only.")
+                Text(settings.t(L10n.Key.routingGeoipHint))
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Custom direct domains")
+                    Text(settings.t(L10n.Key.routingCustomDirectDomains))
                         .font(.headline)
-                    Text("One domain per line. Unicode domains are normalized to IDN.")
+                    Text(settings.t(L10n.Key.routingCustomDirectDomainsHint))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     TextEditor(text: customDomainsBinding(for: profile))
@@ -68,28 +69,28 @@ struct RoutingView: View {
     }
 
     private func routePreviewPanel(_ profile: ProfileIr) -> some View {
-        PanelCard(title: "Route preview", systemImage: "binoculars") {
+        PanelCard(title: settings.t(L10n.Key.routingRoutePreview), systemImage: "binoculars") {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .top, spacing: 12) {
-                    TextField("App bundle ID", text: $previewForm.packageName)
-                    TextField("Destination host", text: $previewForm.destinationHost)
-                    TextField("Destination IP", text: $previewForm.destinationIp)
-                    TextField("Port", text: $previewForm.destinationPort)
+                    TextField(settings.t(L10n.Key.routingFieldAppBundleID), text: $previewForm.packageName)
+                    TextField(settings.t(L10n.Key.routingFieldDestinationHost), text: $previewForm.destinationHost)
+                    TextField(settings.t(L10n.Key.routingFieldDestinationIp), text: $previewForm.destinationIp)
+                    TextField(settings.t(L10n.Key.commonPort), text: $previewForm.destinationPort)
                         .frame(width: 90)
-                    Picker("Protocol", selection: $previewForm.protocolName) {
-                        Text("Any").tag("")
-                        Text("TCP").tag(NetworkProtocol.tcp.rawValue)
-                        Text("UDP").tag(NetworkProtocol.udp.rawValue)
+                    Picker(settings.t(L10n.Key.commonProtocol), selection: $previewForm.protocolName) {
+                        Text(settings.t(L10n.Key.commonAny)).tag("")
+                        Text(NetworkProtocol.tcp.rawValue).tag(NetworkProtocol.tcp.rawValue)
+                        Text(NetworkProtocol.udp.rawValue).tag(NetworkProtocol.udp.rawValue)
                     }
                     .frame(width: 130)
                 }
 
                 HStack {
-                    Button("Evaluate") {
+                    Button(settings.t(L10n.Key.routingEvaluate)) {
                         previewOutcome = model.evaluateRoutePreview(previewForm)
                     }
                     .buttonStyle(.borderedProminent)
-                    Button("Reset") {
+                    Button(settings.t(L10n.Key.commonReset)) {
                         previewForm = RoutePreviewForm()
                         previewOutcome = nil
                     }
@@ -119,7 +120,7 @@ struct RoutingView: View {
                         InlineMessage(text: message, tone: .error)
                     }
                 } else {
-                    Text("Evaluation is offline; GeoSite/GeoIP/ASN-only matches are reported as runtime hints rather than silently claimed.")
+                    Text(settings.t(L10n.Key.routingOfflineHint))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -128,13 +129,18 @@ struct RoutingView: View {
     }
 
     private func effectiveRulesPanel(_ profile: ProfileIr) -> some View {
-        PanelCard(title: "Resolved policy", systemImage: "list.bullet.rectangle") {
+        PanelCard(title: settings.t(L10n.Key.routingResolvedPolicy), systemImage: "list.bullet.rectangle") {
             VStack(alignment: .leading, spacing: 10) {
                 if let policy = try? EffectiveRoutingPolicyResolver.resolve(profile) {
-                    LabeledContent("Block rules first", value: "\(profile.routing.rules.filter { $0.action == .block }.count)")
-                    LabeledContent("Generated regional rules", value: "\(policy.generatedRegionalRuleCount)")
-                    LabeledContent("Non-block rules", value: "\(profile.routing.rules.filter { $0.action != .block }.count)")
-                    LabeledContent("Custom direct domains", value: policy.normalizedCustomDirectDomains.isEmpty ? "None" : policy.normalizedCustomDirectDomains.joined(separator: ", "))
+                    LabeledContent(settings.t(L10n.Key.routingBlockRulesFirst), value: "\(profile.routing.rules.filter { $0.action == .block }.count)")
+                    LabeledContent(settings.t(L10n.Key.routingGeneratedRegionalRules), value: "\(policy.generatedRegionalRuleCount)")
+                    LabeledContent(settings.t(L10n.Key.routingNonBlockRules), value: "\(profile.routing.rules.filter { $0.action != .block }.count)")
+                    LabeledContent(
+                        settings.t(L10n.Key.routingCustomDirectDomains),
+                        value: policy.normalizedCustomDirectDomains.isEmpty
+                            ? settings.t(L10n.Key.commonNone)
+                            : policy.normalizedCustomDirectDomains.joined(separator: ", ")
+                    )
                     Divider()
                     ForEach(Array(policy.rules.enumerated()), id: \.element.id) { _, rule in
                         HStack {
@@ -148,7 +154,7 @@ struct RoutingView: View {
                         }
                     }
                 } else {
-                    InlineMessage(text: "The routing policy contains an invalid regional bypass domain.", tone: .error)
+                    InlineMessage(text: settings.t(L10n.Key.routingInvalidPolicy), tone: .error)
                 }
             }
         }
@@ -169,16 +175,16 @@ struct RoutingView: View {
 
     private func criteriaSummary(_ match: RouteMatch) -> String {
         var parts: [String] = []
-        if !match.domainExact.isEmpty { parts.append("exact \(match.domainExact.count)") }
-        if !match.domainSuffix.isEmpty { parts.append("suffix \(match.domainSuffix.count)") }
-        if !match.domainKeyword.isEmpty { parts.append("keyword \(match.domainKeyword.count)") }
-        if !match.ipCidrs.isEmpty { parts.append("cidr \(match.ipCidrs.count)") }
-        if !match.geoSites.isEmpty { parts.append("geosite \(match.geoSites.count)") }
-        if !match.geoIps.isEmpty { parts.append("geoip \(match.geoIps.count)") }
-        if !match.asns.isEmpty { parts.append("asn \(match.asns.count)") }
-        if !match.packageNames.isEmpty { parts.append("app \(match.packageNames.count)") }
-        if !match.ports.isEmpty { parts.append("port \(match.ports.count)") }
+        if !match.domainExact.isEmpty { parts.append("\(settings.t(L10n.Key.routingCriteriaExact)) \(match.domainExact.count)") }
+        if !match.domainSuffix.isEmpty { parts.append("\(settings.t(L10n.Key.routingCriteriaSuffix)) \(match.domainSuffix.count)") }
+        if !match.domainKeyword.isEmpty { parts.append("\(settings.t(L10n.Key.routingCriteriaKeyword)) \(match.domainKeyword.count)") }
+        if !match.ipCidrs.isEmpty { parts.append("\(settings.t(L10n.Key.routingCriteriaCidr)) \(match.ipCidrs.count)") }
+        if !match.geoSites.isEmpty { parts.append("\(settings.t(L10n.Key.routingCriteriaGeosite)) \(match.geoSites.count)") }
+        if !match.geoIps.isEmpty { parts.append("\(settings.t(L10n.Key.routingCriteriaGeoip)) \(match.geoIps.count)") }
+        if !match.asns.isEmpty { parts.append("\(settings.t(L10n.Key.routingCriteriaAsn)) \(match.asns.count)") }
+        if !match.packageNames.isEmpty { parts.append("\(settings.t(L10n.Key.routingCriteriaApp)) \(match.packageNames.count)") }
+        if !match.ports.isEmpty { parts.append("\(settings.t(L10n.Key.commonPort)) \(match.ports.count)") }
         if !match.protocols.isEmpty { parts.append(match.protocols.map { $0.rawValue }.joined(separator: "/")) }
-        return parts.isEmpty ? "No criteria" : parts.joined(separator: " · ")
+        return parts.isEmpty ? settings.t(L10n.Key.routingNoCriteria) : parts.joined(separator: " · ")
     }
 }

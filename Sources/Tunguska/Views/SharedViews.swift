@@ -2,10 +2,11 @@ import SwiftUI
 import TunguskaCore
 
 struct StatusPill: View {
+    @EnvironmentObject private var settings: AppSettings
     let state: TunnelObservedState
 
     var body: some View {
-        Label(state.title, systemImage: iconName)
+        Label(state.title(language: settings.appLanguage), systemImage: iconName)
             .font(.caption.weight(.semibold))
             .padding(.horizontal, 10)
             .padding(.vertical, 5)

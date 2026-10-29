@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 
 struct SecurityView: View {
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var settings: AppSettings
     @State private var backupPassphrase = ""
     @State private var backupMessage: String?
     @State private var backupError: String?
@@ -16,33 +17,33 @@ struct SecurityView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                PanelCard(title: "Local storage", systemImage: "key.fill") {
+                PanelCard(title: settings.t(L10n.Key.securityLocalStorage), systemImage: "key.fill") {
                     VStack(alignment: .leading, spacing: 10) {
-                        LabeledContent("Profile count", value: "\(model.profiles.count)")
-                        LabeledContent("Active profile", value: model.activeProfile?.name ?? "None")
-                        LabeledContent("Storage", value: "macOS Keychain, this-device accessible")
-                        LabeledContent("Auto-connect after import", value: "Disabled")
+                        LabeledContent(settings.t(L10n.Key.securityProfileCount), value: "\(model.profiles.count)")
+                        LabeledContent(settings.t(L10n.Key.profilesActiveProfile), value: model.activeProfile?.name ?? settings.t(L10n.Key.commonNone))
+                        LabeledContent(settings.t(L10n.Key.securityStorageLabel), value: settings.t(L10n.Key.securityStorageValue))
+                        LabeledContent(settings.t(L10n.Key.securityAutoConnectAfterImport), value: settings.t(L10n.Key.commonDisabled))
                         if let storageError = model.storageError {
                             InlineMessage(text: storageError, tone: .error)
                         }
                     }
                 }
 
-                PanelCard(title: "Encrypted backup", systemImage: "lock.doc") {
+                PanelCard(title: settings.t(L10n.Key.securityEncryptedBackup), systemImage: "lock.doc") {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("Exports every profile into one authenticated AES-256-GCM container. The passphrase derives the key with PBKDF2-HMAC-SHA256 and is never stored.")
+                        Text(settings.t(L10n.Key.securityBackupDescription))
                             .font(.callout)
                             .foregroundStyle(.secondary)
-                        SecureField("Backup passphrase (12 characters or more)", text: $backupPassphrase)
+                        SecureField(settings.t(L10n.Key.securityBackupPassphrase), text: $backupPassphrase)
                             .textFieldStyle(.roundedBorder)
                         HStack(spacing: 10) {
-                            Button("Export backup", systemImage: "square.and.arrow.up") {
+                            Button(settings.t(L10n.Key.securityExportBackup), systemImage: "square.and.arrow.up") {
                                 exportBackup()
                             }
                             .buttonStyle(.borderedProminent)
                             .disabled(model.profiles.isEmpty)
 
-                            Button("Restore backup", systemImage: "square.and.arrow.down") {
+                            Button(settings.t(L10n.Key.securityRestoreBackup), systemImage: "square.and.arrow.down") {
                                 restoreBackup()
                             }
                             .buttonStyle(.bordered)
@@ -56,18 +57,18 @@ struct SecurityView: View {
                     }
                 }
 
-                PanelCard(title: "Redacted diagnostics", systemImage: "text.viewfinder") {
+                PanelCard(title: settings.t(L10n.Key.securityRedactedDiagnostics), systemImage: "text.viewfinder") {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("Builds a support report without profile IDs, names, endpoints, UUIDs, REALITY keys, DNS addresses, rule domains, or share links.")
+                        Text(settings.t(L10n.Key.securityDiagnosticsDescription))
                             .font(.callout)
                             .foregroundStyle(.secondary)
                         HStack(spacing: 10) {
-                            Button("Generate report", systemImage: "doc.text.magnifyingglass") {
+                            Button(settings.t(L10n.Key.securityGenerateReport), systemImage: "doc.text.magnifyingglass") {
                                 generateDiagnostics()
                             }
                             .buttonStyle(.borderedProminent)
 
-                            Button("Copy", systemImage: "doc.on.doc") {
+                            Button(settings.t(L10n.Key.commonCopy), systemImage: "doc.on.doc") {
                                 copyDiagnostics()
                             }
                             .buttonStyle(.bordered)
@@ -84,35 +85,35 @@ struct SecurityView: View {
                     }
                 }
 
-                PanelCard(title: "Safety posture", systemImage: "checkmark.shield") {
+                PanelCard(title: settings.t(L10n.Key.securitySafetyPosture), systemImage: "checkmark.shield") {
                     VStack(alignment: .leading, spacing: 10) {
-                        SafetyRow(title: "Safe mode", detail: "Unsafe imported profiles are rejected.", enabled: model.activeProfile?.safety.safeMode ?? false)
-                        SafetyRow(title: "Compatibility local proxy", detail: "Kept disabled for the local build.", enabled: model.activeProfile?.safety.compatibilityLocalProxy ?? false, invert: true)
-                        SafetyRow(title: "Debug endpoints", detail: "Kept disabled for the local build.", enabled: model.activeProfile?.safety.debugEndpointsEnabled ?? false, invert: true)
-                        SafetyRow(title: "Fail-closed tunnel policy", detail: "An invalid runtime configuration must not connect.", enabled: true)
+                        SafetyRow(title: settings.t(L10n.Key.commonSafeMode), detail: settings.t(L10n.Key.securitySafeModeDetail), enabled: model.activeProfile?.safety.safeMode ?? false)
+                        SafetyRow(title: settings.t(L10n.Key.commonLocalProxy), detail: settings.t(L10n.Key.securityKeptDisabled), enabled: model.activeProfile?.safety.compatibilityLocalProxy ?? false, invert: true)
+                        SafetyRow(title: settings.t(L10n.Key.commonDebugEndpoints), detail: settings.t(L10n.Key.securityKeptDisabled), enabled: model.activeProfile?.safety.debugEndpointsEnabled ?? false, invert: true)
+                        SafetyRow(title: settings.t(L10n.Key.securityFailClosed), detail: settings.t(L10n.Key.securityFailClosedDetail), enabled: true)
                     }
                 }
 
-                PanelCard(title: "Connection invariants", systemImage: "network.badge.shield.half.filled") {
+                PanelCard(title: settings.t(L10n.Key.securityConnectionInvariants), systemImage: "network.badge.shield.half.filled") {
                     VStack(alignment: .leading, spacing: 10) {
-                        Label("Only a live TUN interface from the privileged helper can produce the Connected state.", systemImage: "checkmark.circle")
-                        Label("Desired state is separate from observed runtime state.", systemImage: "checkmark.circle")
-                        Label("Secrets are masked in the UI and are not written to logs.", systemImage: "checkmark.circle")
-                        Label("Loopback destinations remain direct by routing policy.", systemImage: "checkmark.circle")
+                        Label(settings.t(L10n.Key.securityInvariantConnected), systemImage: "checkmark.circle")
+                        Label(settings.t(L10n.Key.securityInvariantDesired), systemImage: "checkmark.circle")
+                        Label(settings.t(L10n.Key.securityInvariantSecrets), systemImage: "checkmark.circle")
+                        Label(settings.t(L10n.Key.securityInvariantLoopback), systemImage: "checkmark.circle")
                     }
                     .font(.callout)
                     .foregroundStyle(.secondary)
                 }
 
-                PanelCard(title: "Runtime packaging", systemImage: "shippingbox") {
+                PanelCard(title: settings.t(L10n.Key.securityRuntimePackaging), systemImage: "shippingbox") {
                     VStack(alignment: .leading, spacing: 10) {
-                        LabeledContent("App target", value: "SwiftUI instrument panel")
-                        LabeledContent("Tunnel target", value: "Privileged helper + sing-box CLI")
-                        LabeledContent("Engine", value: "Pinned sing-box CLI, arm64")
-                        Text("The helper installs a LaunchDaemon under /Library/Tunguska and requires an administrator password once during setup.")
+                        LabeledContent(settings.t(L10n.Key.securityAppTarget), value: settings.t(L10n.Key.securityAppTargetValue))
+                        LabeledContent(settings.t(L10n.Key.securityTunnelTarget), value: settings.t(L10n.Key.securityTunnelTargetValue))
+                        LabeledContent(settings.t(L10n.Key.securityEngine), value: settings.t(L10n.Key.securityEngineValue))
+                        Text(settings.t(L10n.Key.securityHelperInstallNote))
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        Text("This Clash-Verge-style path avoids the NetworkExtension entitlement. Gatekeeper may warn for unsigned local builds; do not run an unsigned privileged helper from untrusted sources.")
+                        Text(settings.t(L10n.Key.securityGatekeeperNote))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -121,7 +122,7 @@ struct SecurityView: View {
             .padding(24)
             .frame(maxWidth: 820, alignment: .leading)
         }
-        .navigationTitle("Security")
+        .navigationTitle(settings.t(L10n.Key.sidebarSecurity))
     }
 
     private func exportBackup() {
@@ -135,7 +136,7 @@ struct SecurityView: View {
             panel.nameFieldStringValue = "Tunguska-\(Int(Date().timeIntervalSince1970)).tunguska"
             guard panel.runModal() == .OK, let url = panel.url else { return }
             try data.write(to: url, options: .atomic)
-            backupMessage = "Encrypted backup written to \(url.lastPathComponent)."
+            backupMessage = settings.fmt(L10n.Key.securityBackupWrittenFormat, url.lastPathComponent)
         } catch {
             backupError = error.localizedDescription
         }
@@ -155,7 +156,9 @@ struct SecurityView: View {
                 throw ProfileBackupError.malformedEnvelope
             }
             let count = try model.importBackup(data: data, passphrase: backupPassphrase)
-            backupMessage = "Restored \(count) profile\(count == 1 ? "" : "s") from \(url.lastPathComponent)."
+            backupMessage = count == 1
+                ? settings.fmt(L10n.Key.securityRestoredOneFormat, url.lastPathComponent)
+                : settings.fmt(L10n.Key.securityRestoredManyFormat, count, url.lastPathComponent)
         } catch {
             backupError = error.localizedDescription
         }
@@ -178,6 +181,7 @@ struct SecurityView: View {
 }
 
 private struct SafetyRow: View {
+    @EnvironmentObject private var settings: AppSettings
     let title: String
     let detail: String
     let enabled: Bool
@@ -185,7 +189,7 @@ private struct SafetyRow: View {
 
     private var displayState: (String, Color) {
         let displayed = invert ? !enabled : enabled
-        return displayed ? ("Pass", .green) : ("Restricted", .orange)
+        return displayed ? (settings.t(L10n.Key.securityPass), .green) : (settings.t(L10n.Key.securityRestricted), .orange)
     }
 
     var body: some View {
