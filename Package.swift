@@ -38,8 +38,12 @@ let package = Package(
         ),
         .executableTarget(
             name: "TunguskaHelper",
-            dependencies: ["TunguskaCore"],
+            dependencies: ["TunguskaCore", "TunguskaSCShim"],
             path: "Sources/TunguskaHelper"
+        ),
+        .target(
+            name: "TunguskaSCShim",
+            path: "Sources/TunguskaSCShim"
         ),
         .target(
             name: "TunguskaTunnel",

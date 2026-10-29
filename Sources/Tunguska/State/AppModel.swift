@@ -29,6 +29,14 @@ final class AppModel: ObservableObject {
     @Published private(set) var importPreview: ImportedProfile?
     @Published private(set) var importError: String?
     @Published private(set) var storageError: String?
+    /// TUN vs system-proxy capture mode; persisted in UserDefaults.
+    @Published private(set) var tunnelMode: HelperCommandMode = {
+        if let raw = UserDefaults.standard.string(forKey: "tunguska.tunnel.mode"),
+           let mode = HelperCommandMode(rawValue: raw) {
+            return mode
+        }
+        return .tun
+    }()
     @Published private(set) var profileValidationMessage: String?
     @Published private(set) var tunnelError: String?
 
@@ -189,6 +197,20 @@ final class AppModel: ObservableObject {
         tunnelError = nil
     }
 
+    /// Switches the capture mode. Ignored while a session is active so a running
+    /// TUN or system-proxy session is never reconfigured mid-flight.
+    func setTunnelMode(_ mode: HelperCommandMode) {
+        guard mode != tunnelMode else { return }
+        switch tunnelController.observedState {
+        case .connected, .connecting, .disconnecting:
+            return
+        default:
+            break
+        }
+        tunnelMode = mode
+        UserDefaults.standard.set(mode.rawValue, forKey: "tunguska.tunnel.mode")
+    }
+
     func connectActiveProfile() async {
         tunnelError = nil
         guard let profile = activeProfile else {
@@ -196,7 +218,7 @@ final class AppModel: ObservableObject {
             return
         }
         do {
-            try await tunnelController.connect(profile: profile)
+            try await tunnelController.connect(profile: profile, mode: tunnelMode)
         } catch {
             tunnelError = error.localizedDescription
         }

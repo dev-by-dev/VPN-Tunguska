@@ -72,5 +72,87 @@ final class HelperProtocolTests: XCTestCase {
             }
         }
     }
+
+    // MARK: - Command modes
+
+    func testStartRequestRoundTripCarriesMode() throws {
+        let request = HelperRequest.start(
+            profileID: "profile-1",
+            config: "{\"inbounds\":[]}",
+            mode: .systemProxy,
+            expectedInterfaceAddress: nil
+        )
+
+        let decoded = try HelperProtocol.decodeRequest(HelperProtocol.encode(request))
+
+        XCTAssertEqual(decoded.mode, .systemProxy)
+    }
+
+    func testLegacyStartRequestWithoutModeDecodesAsNil() throws {
+        let legacyJSON = """
+        {"action":"start","profileID":"p","config":"{}","expectedInterfaceAddress":"172.19.0.1"}
+        """
+
+        let decoded = try HelperProtocol.decodeRequest(Data(legacyJSON.utf8))
+
+        XCTAssertEqual(decoded.action, .start)
+        XCTAssertNil(decoded.mode, "legacy requests must decode without a mode and default to TUN")
+    }
+
+    func testValidateAcceptsLoopbackMixedForSystemProxyMode() throws {
+        let config = """
+        {
+          "inbounds": [{"type": "mixed", "tag": "mixed-in", "listen": "127.0.0.1", "listen_port": 7890}],
+          "outbounds": [
+            {"type": "vless", "tag": "proxy"},
+            {"type": "direct", "tag": "direct"},
+            {"type": "block", "tag": "block"}
+          ],
+          "route": {"final": "proxy"}
+        }
+        """
+
+        XCTAssertNoThrow(try HelperProtocol.validateStartConfiguration(config, mode: .systemProxy))
+    }
+
+    func testValidateSystemProxyModeRejectsTunInbound() {
+        let config = """
+        {
+          "inbounds": [{"type": "tun", "tag": "tun-in"}],
+          "outbounds": [
+            {"type": "vless", "tag": "proxy"},
+            {"type": "direct", "tag": "direct"},
+            {"type": "block", "tag": "block"}
+          ],
+          "route": {"final": "proxy"}
+        }
+        """
+
+        XCTAssertThrowsError(try HelperProtocol.validateStartConfiguration(config, mode: .systemProxy)) { error in
+            guard case HelperProtocolError.invalidConfiguration = error else {
+                return XCTFail("Expected invalidConfiguration, got \(error)")
+            }
+        }
+    }
+
+    func testValidateSystemProxyModeRejectsNonLoopbackMixed() {
+        let config = """
+        {
+          "inbounds": [{"type": "mixed", "tag": "mixed-in", "listen": "0.0.0.0", "listen_port": 7890}],
+          "outbounds": [
+            {"type": "vless", "tag": "proxy"},
+            {"type": "direct", "tag": "direct"},
+            {"type": "block", "tag": "block"}
+          ],
+          "route": {"final": "proxy"}
+        }
+        """
+
+        XCTAssertThrowsError(try HelperProtocol.validateStartConfiguration(config, mode: .systemProxy)) { error in
+            guard case HelperProtocolError.invalidConfiguration = error else {
+                return XCTFail("Expected invalidConfiguration, got \(error)")
+            }
+        }
+    }
 }
 #endif

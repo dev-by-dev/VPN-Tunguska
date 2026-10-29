@@ -8,6 +8,8 @@ final class SingBoxProcessController: @unchecked Sendable {
         var interface: String?
         var startedAt: Date?
         var message: String?
+        var mode: HelperCommandMode
+        var proxyPort: Int?
     }
 
     private let lock = NSLock()
@@ -15,6 +17,8 @@ final class SingBoxProcessController: @unchecked Sendable {
     private var configPath: URL?
     private var startedAt: Date?
     private var lastMessage: String?
+    private var mode: HelperCommandMode = .tun
+    private var proxyPort: Int?
 
     init() {
         try? FileManager.default.createDirectory(
@@ -31,7 +35,7 @@ final class SingBoxProcessController: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
 
-        updateObservedInterfaceIfNeeded()
+        updateObservedStateMessageIfNeeded()
         return HelperResponse(ok: true, status: snapshotLocked().helperStatus, message: snapshotLocked().message)
     }
 
@@ -39,7 +43,19 @@ final class SingBoxProcessController: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
 
+        var restoreFailure: String?
+        if mode == .systemProxy || SystemProxyController.isConfigured {
+            do {
+                try SystemProxyController.restore()
+            } catch {
+                restoreFailure = error.localizedDescription
+            }
+        }
         stopLocked()
+        if let restoreFailure {
+            lastMessage = "The system proxy could not be fully restored: \(restoreFailure)"
+            return HelperResponse(ok: false, status: snapshotLocked().helperStatus, message: lastMessage)
+        }
         lastMessage = "The tunnel service is stopped."
         return HelperResponse(ok: true, status: snapshotLocked().helperStatus, message: lastMessage)
     }
@@ -56,8 +72,9 @@ final class SingBoxProcessController: @unchecked Sendable {
             )
         }
 
+        let requestedMode = request.mode ?? .tun
         do {
-            try HelperProtocol.validateStartConfiguration(config)
+            try HelperProtocol.validateStartConfiguration(config, mode: requestedMode)
         } catch {
             return HelperResponse(
                 ok: false,
@@ -95,6 +112,11 @@ final class SingBoxProcessController: @unchecked Sendable {
             return HelperResponse(ok: false, status: snapshotLocked().helperStatus, message: lastMessage)
         }
 
+        let activeMode = requestedMode
+        let activeProxyPort = activeMode == .systemProxy
+            ? Self.proxyPort(fromConfigJSON: config) ?? HelperProtocol.defaultProxyPort
+            : nil
+
         singBox.terminationHandler = { [weak self] terminated in
             guard let self else { return }
             lock.lock()
@@ -112,6 +134,11 @@ final class SingBoxProcessController: @unchecked Sendable {
             process = nil
             startedAt = nil
             lastMessage = "sing-box stopped (\(reason))."
+            // If the engine dies on its own, release the system proxy instead of
+            // leaving macOS pointed at a dead port.
+            if activeMode == .systemProxy, SystemProxyController.isConfigured {
+                try? SystemProxyController.restore()
+            }
         }
 
         do {
@@ -125,6 +152,18 @@ final class SingBoxProcessController: @unchecked Sendable {
         process = singBox
         configPath = configURL
         startedAt = Date()
+        mode = activeMode
+        proxyPort = activeProxyPort
+
+        switch activeMode {
+        case .tun:
+            return waitForTunInterface(singBox, expectedAddress: expectedAddress)
+        case .systemProxy:
+            return waitForProxyPort(singBox, port: activeProxyPort ?? HelperProtocol.defaultProxyPort)
+        }
+    }
+
+    private func waitForTunInterface(_ singBox: Process, expectedAddress: String) -> HelperResponse {
         lastMessage = "sing-box launched; waiting for the TUN interface."
 
         let deadline = Date().addingTimeInterval(8)
@@ -141,6 +180,33 @@ final class SingBoxProcessController: @unchecked Sendable {
 
         stopLocked()
         lastMessage = "sing-box started, but the expected TUN interface was not observed."
+        return HelperResponse(ok: false, status: snapshotLocked().helperStatus, message: lastMessage)
+    }
+
+    private func waitForProxyPort(_ singBox: Process, port: Int) -> HelperResponse {
+        lastMessage = "sing-box launched; waiting for the local proxy port."
+
+        let deadline = Date().addingTimeInterval(8)
+        while Date() < deadline {
+            if !singBox.isRunning {
+                break
+            }
+            if Self.isLocalTCPPortOpen(port) {
+                do {
+                    try SystemProxyController.apply(port: port)
+                } catch {
+                    stopLocked()
+                    lastMessage = "sing-box started, but the system proxy could not be configured: \(error.localizedDescription)"
+                    return HelperResponse(ok: false, status: snapshotLocked().helperStatus, message: lastMessage)
+                }
+                lastMessage = "System proxy is active on \(HelperProtocol.proxyListenHost):\(port)."
+                return HelperResponse(ok: true, status: snapshotLocked().helperStatus, message: lastMessage)
+            }
+            usleep(100_000)
+        }
+
+        stopLocked()
+        lastMessage = "sing-box started, but the local proxy port \(port) never accepted connections."
         return HelperResponse(ok: false, status: snapshotLocked().helperStatus, message: lastMessage)
     }
 
@@ -195,31 +261,85 @@ final class SingBoxProcessController: @unchecked Sendable {
         }
     }
 
-    private func updateObservedInterfaceIfNeeded() {
+    private func updateObservedStateMessageIfNeeded() {
         guard process != nil else { return }
-        if let interface = Self.observedInterface(expectedAddress: HelperProtocol.defaultTunAddress) {
-            lastMessage = "Tunnel is running on \(interface)."
+        switch mode {
+        case .tun:
+            if let interface = Self.observedInterface(expectedAddress: HelperProtocol.defaultTunAddress) {
+                lastMessage = "Tunnel is running on \(interface)."
+            }
+        case .systemProxy:
+            lastMessage = "System proxy is active on \(HelperProtocol.proxyListenHost):\(proxyPort ?? HelperProtocol.defaultProxyPort)."
         }
     }
 
     private func snapshotLocked(interface: String? = nil) -> Snapshot {
         let pid = process?.processIdentifier
-        let observed = interface ?? (process != nil
-            ? Self.observedInterface(expectedAddress: HelperProtocol.defaultTunAddress)
-            : nil)
         let state: HelperRunState
         if let process, process.isRunning {
-            state = observed == nil ? .starting : .running
+            switch mode {
+            case .tun:
+                let observed = interface ?? Self.observedInterface(expectedAddress: HelperProtocol.defaultTunAddress)
+                if observed == nil {
+                    state = .starting
+                } else {
+                    state = .running
+                }
+            case .systemProxy:
+                state = .running
+            }
         } else {
             state = .stopped
+        }
+        let observedInterface: String?
+        if mode == .tun, let process, process.isRunning {
+            observedInterface = interface ?? Self.observedInterface(expectedAddress: HelperProtocol.defaultTunAddress)
+        } else {
+            observedInterface = nil
         }
         return Snapshot(
             state: state,
             pid: pid,
-            interface: observed,
+            interface: observedInterface,
             startedAt: startedAt,
-            message: lastMessage
+            message: lastMessage,
+            mode: mode,
+            proxyPort: mode == .systemProxy ? proxyPort : nil
         )
+    }
+
+    /// Reads the mixed inbound's listen_port back out of the accepted configuration.
+    private static func proxyPort(fromConfigJSON config: String) -> Int? {
+        guard let data = config.data(using: .utf8),
+              let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let inbounds = object["inbounds"] as? [[String: Any]]
+        else { return nil }
+        for inbound in inbounds where inbound["type"] as? String == "mixed" {
+            if let port = inbound["listen_port"] as? Int {
+                return port
+            }
+        }
+        return nil
+    }
+
+    /// Quick loopback TCP probe used to confirm the mixed inbound is accepting
+    /// connections before the system proxy is pointed at it.
+    private static func isLocalTCPPortOpen(_ port: Int) -> Bool {
+        var address = sockaddr_in()
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = in_port_t(UInt16(clamping: port)).bigEndian
+        address.sin_addr = in_addr(s_addr: inet_addr(HelperProtocol.proxyListenHost))
+
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+
+        let result = withUnsafePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPointer in
+                connect(fd, sockaddrPointer, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        return result == 0
     }
 
     private static func observedInterface(expectedAddress: String) -> String? {
@@ -271,7 +391,9 @@ private extension SingBoxProcessController.Snapshot {
             pid: pid.map { Int($0) },
             interface: interface,
             startedAt: startedAt,
-            message: message
+            message: message,
+            mode: mode,
+            proxyPort: proxyPort
         )
     }
 }

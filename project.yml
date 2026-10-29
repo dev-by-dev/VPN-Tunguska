@@ -71,6 +71,7 @@ targets:
     platform: macOS
     sources:
       - path: Sources/TunguskaHelper
+      - path: Sources/TunguskaSCShim/tunguska_sc.c
     dependencies:
       - target: TunguskaCore
       - sdk: SystemConfiguration.framework
@@ -79,6 +80,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: dev.tunguska.macos.helper
         PRODUCT_NAME: TunguskaHelper
         GENERATE_INFOPLIST_FILE: YES
+        SWIFT_INCLUDE_PATHS: "$(SRCROOT)/Sources/TunguskaSCShim/include"
+        HEADER_SEARCH_PATHS: "$(SRCROOT)/Sources/TunguskaSCShim/include"
         # The installed helper is standalone under /Library/Tunguska and finds the
         # copied TunguskaCore.framework in /Library/Tunguska/Frameworks.
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @loader_path/Frameworks @loader_path/../Frameworks"

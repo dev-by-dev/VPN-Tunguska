@@ -17,6 +17,13 @@ final class HelperServer: @unchecked Sendable {
             withIntermediateDirectories: true
         )
 
+        // Crash recovery: a snapshot without a running engine means the daemon was
+        // restarted mid-session. Restore the saved proxy settings instead of leaving
+        // the system pointed at a dead port.
+        if SystemProxyController.isConfigured {
+            try SystemProxyController.restore()
+        }
+
         let serverFD = socket(AF_UNIX, SOCK_STREAM, 0)
         guard serverFD >= 0 else {
             throw NSError(

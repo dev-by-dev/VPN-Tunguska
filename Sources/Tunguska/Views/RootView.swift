@@ -1,4 +1,5 @@
 import SwiftUI
+import TunguskaCore
 
 struct RootView: View {
     @EnvironmentObject private var model: AppModel
@@ -67,6 +68,16 @@ struct MenuBarContentView: View {
                 Text("No profile selected")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+            }
+
+            if model.tunnelController.observedState == .connected {
+                Text(
+                    model.tunnelController.activeMode == .systemProxy
+                        ? "System proxy · \(HelperProtocol.proxyListenHost):\(HelperProtocol.defaultProxyPort)"
+                        : "TUN mode"
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
 
             Divider()

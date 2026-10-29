@@ -6,22 +6,32 @@ public enum HelperCommandAction: String, Codable, Equatable, Sendable {
     case stop
 }
 
+/// How the tunnel captures traffic. Mirrors the Clash Verge split:
+/// TUN owns the routing table; system proxy only rewrites per-app proxy settings.
+public enum HelperCommandMode: String, Codable, Equatable, Sendable {
+    case tun
+    case systemProxy
+}
+
 public struct HelperRequest: Codable, Equatable, Sendable {
     public var action: HelperCommandAction
     public var profileID: String?
     public var config: String?
     public var expectedInterfaceAddress: String?
+    public var mode: HelperCommandMode?
 
     public init(
         action: HelperCommandAction,
         profileID: String? = nil,
         config: String? = nil,
-        expectedInterfaceAddress: String? = nil
+        expectedInterfaceAddress: String? = nil,
+        mode: HelperCommandMode? = nil
     ) {
         self.action = action
         self.profileID = profileID
         self.config = config
         self.expectedInterfaceAddress = expectedInterfaceAddress
+        self.mode = mode
     }
 
     public static func status() -> HelperRequest {
@@ -31,13 +41,15 @@ public struct HelperRequest: Codable, Equatable, Sendable {
     public static func start(
         profileID: String,
         config: String,
-        expectedInterfaceAddress: String = HelperProtocol.defaultTunAddress
+        mode: HelperCommandMode = .tun,
+        expectedInterfaceAddress: String? = HelperProtocol.defaultTunAddress
     ) -> HelperRequest {
         HelperRequest(
             action: .start,
             profileID: profileID,
             config: config,
-            expectedInterfaceAddress: expectedInterfaceAddress
+            expectedInterfaceAddress: expectedInterfaceAddress,
+            mode: mode
         )
     }
 
@@ -59,19 +71,25 @@ public struct HelperStatus: Codable, Equatable, Sendable {
     public var interface: String?
     public var startedAt: Date?
     public var message: String?
+    public var mode: HelperCommandMode?
+    public var proxyPort: Int?
 
     public init(
         state: HelperRunState,
         pid: Int? = nil,
         interface: String? = nil,
         startedAt: Date? = nil,
-        message: String? = nil
+        message: String? = nil,
+        mode: HelperCommandMode? = nil,
+        proxyPort: Int? = nil
     ) {
         self.state = state
         self.pid = pid
         self.interface = interface
         self.startedAt = startedAt
         self.message = message
+        self.mode = mode
+        self.proxyPort = proxyPort
     }
 }
 
@@ -105,6 +123,9 @@ public enum HelperProtocolError: LocalizedError, Equatable {
 public enum HelperProtocol {
     public static let socketPath = "/var/run/tunguska-helper.sock"
     public static let defaultTunAddress = "172.19.0.1"
+    /// Local mixed (HTTP + SOCKS) inbound used by system-proxy mode.
+    public static let defaultProxyPort = 7890
+    public static let proxyListenHost = "127.0.0.1"
 
     private static let requestEncoder: JSONEncoder = {
         let encoder = JSONEncoder()
@@ -148,7 +169,11 @@ public enum HelperProtocol {
 
     /// Accept only Tunguska-shaped sing-box documents. This prevents the privileged helper
     /// from being turned into a generic launcher for arbitrary network processes.
-    public static func validateStartConfiguration(_ config: String) throws {
+    /// The required inbound shape depends on the requested mode.
+    public static func validateStartConfiguration(
+        _ config: String,
+        mode: HelperCommandMode = .tun
+    ) throws {
         guard let data = config.data(using: .utf8) else {
             throw HelperProtocolError.invalidConfiguration("The tunnel configuration is not valid UTF-8.")
         }
@@ -166,8 +191,27 @@ public enum HelperProtocol {
         guard let inbounds = root["inbounds"] as? [[String: Any]], !inbounds.isEmpty else {
             throw HelperProtocolError.invalidConfiguration("The tunnel configuration must contain inbounds.")
         }
-        guard inbounds.contains(where: { $0["type"] as? String == "tun" }) else {
-            throw HelperProtocolError.invalidConfiguration("The tunnel configuration must contain a TUN inbound.")
+        switch mode {
+        case .tun:
+            guard inbounds.contains(where: { $0["type"] as? String == "tun" }) else {
+                throw HelperProtocolError.invalidConfiguration("The tunnel configuration must contain a TUN inbound.")
+            }
+        case .systemProxy:
+            // The mixed inbound must stay loopback-only so the privileged proxy is
+            // never exposed to the local network.
+            guard inbounds.contains(where: { inbound in
+                inbound["type"] as? String == "mixed"
+                    && inbound["listen"] as? String == proxyListenHost
+            }) else {
+                throw HelperProtocolError.invalidConfiguration(
+                    "The system-proxy configuration must contain a mixed inbound listening on \(proxyListenHost)."
+                )
+            }
+            guard !inbounds.contains(where: { $0["type"] as? String == "tun" }) else {
+                throw HelperProtocolError.invalidConfiguration(
+                    "The system-proxy configuration must not create a TUN interface."
+                )
+            }
         }
         guard let outbounds = root["outbounds"] as? [[String: Any]],
               outbounds.contains(where: { $0["type"] as? String == "vless" }),

@@ -24,11 +24,11 @@ enum TunnelObservedState: Equatable {
     var detail: String {
         switch self {
         case .disconnected:
-            "No privileged TUN session is active."
+            "No privileged session is active."
         case .connecting:
-            "The sing-box service is starting; the UI remains non-connected until a TUN interface is observed."
+            "The sing-box service is starting; the UI stays non-connected until the session is live."
         case .connected:
-            "The privileged sing-box service reported a live TUN interface."
+            "The privileged sing-box service reported a live session."
         case .disconnecting:
             "The privileged service is stopping the tunnel."
         case let .failed(message):
@@ -65,6 +65,7 @@ final class TunnelController: ObservableObject {
     @Published private(set) var observedState: TunnelObservedState = .unavailable("The privileged tunnel service has not been checked yet.")
     @Published private(set) var isPreparing = false
     @Published private(set) var connectedInterface: String?
+    @Published private(set) var activeMode: HelperCommandMode = .tun
 
     let traffic = TrafficMonitor()
 
@@ -96,8 +97,8 @@ final class TunnelController: ObservableObject {
         }
     }
 
-    func connect(profile: ProfileIr) async throws {
-        Self.logger.log("connect requested for profile \(profile.name, privacy: .public)")
+    func connect(profile: ProfileIr, mode: HelperCommandMode = .tun) async throws {
+        Self.logger.log("connect requested for profile \(profile.name, privacy: .public) mode=\(mode.rawValue, privacy: .public)")
         let issues = profile.validationIssues()
         guard issues.isEmpty else {
             Self.logger.error("profile validation failed: \(issues.map(\.field), privacy: .public)")
@@ -106,7 +107,7 @@ final class TunnelController: ObservableObject {
 
         let generated: SingBoxGeneratedConfiguration
         do {
-            generated = try SingBoxConfigurationBuilder.build(profile: profile)
+            generated = try SingBoxConfigurationBuilder.build(profile: profile, mode: mode)
         } catch {
             Self.logger.error("configuration build failed: \(error.localizedDescription, privacy: .public)")
             throw TunnelControllerError.configurationFailed(error.localizedDescription)
@@ -121,7 +122,8 @@ final class TunnelController: ObservableObject {
                 .start(
                     profileID: profile.id,
                     config: generated.json,
-                    expectedInterfaceAddress: HelperProtocol.defaultTunAddress
+                    mode: mode,
+                    expectedInterfaceAddress: mode == .tun ? HelperProtocol.defaultTunAddress : nil
                 )
             )
         } catch {
@@ -141,10 +143,18 @@ final class TunnelController: ObservableObject {
             throw TunnelControllerError.startFailed(message)
         }
 
-        guard response.status?.state == .running, response.status?.interface != nil else {
-            let message = response.message ?? "sing-box did not report a live TUN interface."
+        guard response.status?.state == .running else {
+            let message = response.message ?? "sing-box did not report a live session."
             observedState = .failed(message)
             throw TunnelControllerError.startFailed(message)
+        }
+
+        if mode == .tun {
+            guard response.status?.interface != nil else {
+                let message = response.message ?? "sing-box did not report a live TUN interface."
+                observedState = .failed(message)
+                throw TunnelControllerError.startFailed(message)
+            }
         }
     }
 
@@ -181,6 +191,9 @@ final class TunnelController: ObservableObject {
             return
         }
 
+        let mode = status.mode ?? .tun
+        activeMode = mode
+
         switch status.state {
         case .stopped:
             connectedInterface = nil
@@ -189,21 +202,30 @@ final class TunnelController: ObservableObject {
         case .starting:
             observedState = .connecting
         case .running:
-            if let reported = status.interface {
-                let interface = await TrafficMonitor.resolveInterface(
-                    hint: reported,
-                    address: HelperProtocol.defaultTunAddress
-                ) ?? reported
-                if interface != reported {
-                    Self.logger.log(
-                        "resolved tunnel interface \(interface, privacy: .public) (helper reported '\(reported, privacy: .public)')"
-                    )
-                }
-                connectedInterface = interface
-                traffic.start(interface: interface)
+            switch mode {
+            case .systemProxy:
+                // No TUN interface exists in this mode; proxied traffic crosses the
+                // loopback mixed inbound, so sample lo0 for the live charts.
+                connectedInterface = nil
+                traffic.start(interface: "lo0")
                 observedState = .connected
-            } else {
-                observedState = .failed(status.message ?? "The helper reported a running engine without a TUN interface.")
+            case .tun:
+                if let reported = status.interface {
+                    let interface = await TrafficMonitor.resolveInterface(
+                        hint: reported,
+                        address: HelperProtocol.defaultTunAddress
+                    ) ?? reported
+                    if interface != reported {
+                        Self.logger.log(
+                            "resolved tunnel interface \(interface, privacy: .public) (helper reported '\(reported, privacy: .public)')"
+                        )
+                    }
+                    connectedInterface = interface
+                    traffic.start(interface: interface)
+                    observedState = .connected
+                } else {
+                    observedState = .failed(status.message ?? "The helper reported a running engine without a TUN interface.")
+                }
             }
         case .failed:
             connectedInterface = nil

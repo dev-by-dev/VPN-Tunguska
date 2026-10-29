@@ -4,6 +4,16 @@ import TunguskaCore
 
 struct HomeView: View {
     @EnvironmentObject private var model: AppModel
+    @State private var selectedMode: HelperCommandMode = .tun
+
+    private var isSessionActive: Bool {
+        switch model.tunnelController.observedState {
+        case .connected, .connecting, .disconnecting:
+            true
+        default:
+            false
+        }
+    }
 
     var body: some View {
         ScrollView {
@@ -65,6 +75,30 @@ struct HomeView: View {
                 Spacer()
 
                 VStack(alignment: .trailing, spacing: 10) {
+                    Picker("Mode", selection: $selectedMode) {
+                        Text("TUN").tag(HelperCommandMode.tun)
+                        Text("System Proxy").tag(HelperCommandMode.systemProxy)
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 200)
+                    .disabled(isSessionActive || model.tunnelController.isPreparing)
+                    .onAppear {
+                        selectedMode = model.tunnelMode
+                    }
+                    .onChange(of: model.tunnelMode) { _, newValue in
+                        if selectedMode != newValue {
+                            selectedMode = newValue
+                        }
+                    }
+                    .onChange(of: selectedMode) { _, newValue in
+                        model.setTunnelMode(newValue)
+                    }
+                    .help(
+                        selectedMode == .tun
+                            ? "TUN mode captures all system traffic through a virtual interface."
+                            : "System Proxy mode routes apps that honor the macOS proxy settings through 127.0.0.1:\(HelperProtocol.defaultProxyPort)."
+                    )
+
                     Menu {
                         ForEach(model.profiles) { profile in
                             Button {

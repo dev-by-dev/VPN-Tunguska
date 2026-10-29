@@ -1,0 +1,4 @@
+module TunguskaSCShim {
+    header "tunguska_sc.h"
+    export *
+}

@@ -87,6 +87,38 @@ final class SingBoxConfigurationBuilderTests: XCTestCase {
         XCTAssertTrue(generated.json.contains("\"final\" : \"dns-local\""))
     }
 
+    func testSystemProxyModeBuildsLoopbackMixedInbound() throws {
+        let generated = try SingBoxConfigurationBuilder.build(profile: sampleProfile(), mode: .systemProxy)
+
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(generated.json.utf8)) as? [String: Any])
+        let inbounds = try XCTUnwrap(object["inbounds"] as? [[String: Any]])
+        XCTAssertEqual(inbounds.count, 1)
+
+        let mixed = try XCTUnwrap(inbounds.first)
+        XCTAssertEqual(mixed["type"] as? String, "mixed")
+        XCTAssertEqual(mixed["tag"] as? String, SingBoxConfigurationBuilder.mixedTag)
+        XCTAssertEqual(mixed["listen"] as? String, HelperProtocol.proxyListenHost)
+        XCTAssertEqual(mixed["listen_port"] as? Int, HelperProtocol.defaultProxyPort)
+        XCTAssertFalse(inbounds.contains { $0["type"] as? String == "tun" }, "proxy mode must not create a TUN device")
+
+        let outbounds = try XCTUnwrap(object["outbounds"] as? [[String: Any]])
+        XCTAssertTrue(outbounds.contains { $0["tag"] as? String == "proxy" }, "VLESS outbound must remain the proxy")
+
+        XCTAssertNoThrow(try HelperProtocol.validateStartConfiguration(generated.json, mode: .systemProxy))
+    }
+
+    func testTunModeIsTheDefaultBuild() throws {
+        let defaultBuild = try SingBoxConfigurationBuilder.build(profile: sampleProfile())
+        let tunBuild = try SingBoxConfigurationBuilder.build(profile: sampleProfile(), mode: .tun)
+
+        XCTAssertEqual(defaultBuild.json, tunBuild.json)
+
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(tunBuild.json.utf8)) as? [String: Any])
+        let inbounds = try XCTUnwrap(object["inbounds"] as? [[String: Any]])
+        XCTAssertEqual(inbounds.first?["type"] as? String, "tun")
+        XCTAssertFalse(inbounds.contains { $0["type"] as? String == "mixed" })
+    }
+
     private func sampleProfile(
         dns: DnsMode = .systemDns,
         routing: RoutingPolicy = RoutingPolicy(regionalBypass: .default)

@@ -45,9 +45,13 @@ public enum SingBoxConfigurationBuilder {
     public static let directTag = "direct"
     public static let blockTag = "block"
     public static let tunTag = "tun-in"
+    public static let mixedTag = "mixed-in"
     public static let localDNSTag = "dns-local"
 
-    public static func build(profile: ProfileIr) throws -> SingBoxGeneratedConfiguration {
+    public static func build(
+        profile: ProfileIr,
+        mode: HelperCommandMode = .tun
+    ) throws -> SingBoxGeneratedConfiguration {
         let issues = profile.validationIssues()
         guard issues.isEmpty else {
             throw SingBoxConfigurationError.invalidProfile(issues)
@@ -65,17 +69,7 @@ public enum SingBoxConfigurationBuilder {
                 "timestamp": true,
             ],
             "dns": dns,
-            "inbounds": [
-                [
-                    "type": "tun",
-                    "tag": tunTag,
-                    "address": ["172.19.0.1/30"],
-                    "mtu": 9000,
-                    "auto_route": true,
-                    "strict_route": false,
-                    "stack": "system",
-                ],
-            ],
+            "inbounds": makeInbounds(mode: mode),
             "outbounds": [
                 makeOutbound(profile.outbound),
                 ["type": "direct", "tag": directTag],
@@ -108,6 +102,35 @@ public enum SingBoxConfigurationBuilder {
             throw error
         } catch {
             throw SingBoxConfigurationError.serializationFailed(error.localizedDescription)
+        }
+    }
+
+    /// TUN mode owns the routing table via a virtual interface; system-proxy mode only
+    /// exposes a loopback mixed (HTTP + SOCKS) inbound that the helper registers with
+    /// macOS as the system proxy, the way Clash Verge's sysproxy flow works.
+    private static func makeInbounds(mode: HelperCommandMode) -> [[String: Any]] {
+        switch mode {
+        case .tun:
+            return [
+                [
+                    "type": "tun",
+                    "tag": tunTag,
+                    "address": ["172.19.0.1/30"],
+                    "mtu": 9000,
+                    "auto_route": true,
+                    "strict_route": false,
+                    "stack": "system",
+                ],
+            ]
+        case .systemProxy:
+            return [
+                [
+                    "type": "mixed",
+                    "tag": mixedTag,
+                    "listen": HelperProtocol.proxyListenHost,
+                    "listen_port": HelperProtocol.defaultProxyPort,
+                ],
+            ]
         }
     }
 
